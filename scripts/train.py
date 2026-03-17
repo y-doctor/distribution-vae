@@ -111,7 +111,7 @@ def main() -> None:
     loss_weights = {
         "cramer": loss_cfg.get("cramer", 1.0),
         "wasserstein1": loss_cfg.get("wasserstein1", 0.0),
-        "ks_smooth": loss_cfg.get("ks_smooth", 0.0),
+        "kl_divergence": loss_cfg.get("kl_divergence", 0.0),
     }
 
     model = DistributionVAE(

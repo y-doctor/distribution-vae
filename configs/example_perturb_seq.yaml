@@ -25,8 +25,7 @@ training:
 loss:
   cramer: 1.0
   wasserstein1: 0.0
-  ks_smooth: 0.0
-  ks_temperature: 0.01
+  kl_divergence: 0.0
 
 logging:
   wandb: false

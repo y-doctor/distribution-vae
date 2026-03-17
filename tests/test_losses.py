@@ -5,7 +5,7 @@ import torch
 from dist_vae.losses import (
     CombinedDistributionLoss,
     cramer_distance,
-    ks_distance_smooth,
+    kl_divergence_quantile,
     wasserstein1_distance,
 )
 
@@ -64,43 +64,53 @@ class TestWasserstein1Distance:
         assert d.shape == (16,)
 
 
-class TestKSDistanceSmooth:
-    def test_non_negative(self, sample_quantile_grids):
-        x = sample_quantile_grids(8, 256)
-        y = sample_quantile_grids(8, 256)
-        d = ks_distance_smooth(x, y)
-        assert (d >= 0).all()
-
+class TestKLDivergenceQuantile:
     def test_zero_for_identical(self, sample_quantile_grids):
         x = sample_quantile_grids(8, 256)
-        d = ks_distance_smooth(x, x)
-        # logsumexp(0/temp, ...) = temp * log(grid_size) ≈ small but not exactly zero
-        # With identical inputs abs_diff=0, so result = temp * log(grid_size)
-        # This is a known property — it's the "bias" of the smooth max at zero
-        assert (d < 0.1).all()  # should be small
+        d = kl_divergence_quantile(x, x)
+        assert torch.allclose(d, torch.zeros_like(d), atol=1e-6)
 
     def test_differentiable(self, sample_quantile_grids):
         x = sample_quantile_grids(4, 64)
-        x.requires_grad_(True)
         y = sample_quantile_grids(4, 64)
-        d = ks_distance_smooth(x, y).sum()
+        y.requires_grad_(True)
+        d = kl_divergence_quantile(x, y).sum()
         d.backward()
-        assert x.grad is not None
+        assert y.grad is not None
 
     def test_batch_dimension(self, sample_quantile_grids):
         x = sample_quantile_grids(16, 128)
         y = sample_quantile_grids(16, 128)
-        d = ks_distance_smooth(x, y)
+        d = kl_divergence_quantile(x, y)
         assert d.shape == (16,)
 
-    def test_temperature_effect(self, sample_quantile_grids):
-        x = sample_quantile_grids(8, 128)
-        y = sample_quantile_grids(8, 128)
-        d_low = ks_distance_smooth(x, y, temperature=0.001)
-        d_high = ks_distance_smooth(x, y, temperature=1.0)
-        true_max = torch.abs(x - y).max(dim=-1).values
-        # Lower temperature should be closer to true max
-        assert torch.mean(torch.abs(d_low - true_max)) < torch.mean(torch.abs(d_high - true_max))
+    def test_positive_for_different_distributions(self):
+        """KL should be positive when distributions differ significantly."""
+        torch.manual_seed(42)
+        # Narrow distribution vs wide distribution
+        x = torch.sort(torch.randn(4, 128) * 0.1)[0]  # narrow
+        y = torch.sort(torch.randn(4, 128) * 2.0)[0]   # wide
+        d = kl_divergence_quantile(x, y)
+        # KL(narrow || wide) should be meaningfully non-zero
+        assert d.abs().mean() > 0.01
+
+    def test_detects_location_shift(self):
+        """KL should be ~0 for a pure location shift (same shape)."""
+        torch.manual_seed(42)
+        x = torch.sort(torch.randn(4, 256))[0]
+        y = x + 5.0  # shift location, keep shape identical
+        d = kl_divergence_quantile(x, y)
+        # Same spacings → log(dy/dx) = log(1) = 0 (small eps noise from clamping)
+        assert torch.allclose(d, torch.zeros_like(d), atol=1e-4)
+
+    def test_detects_scale_change(self):
+        """KL should be non-zero for a scale change (different shape)."""
+        torch.manual_seed(42)
+        x = torch.sort(torch.randn(4, 256))[0]
+        y = x * 2.0  # scale up → spacings double → log(2) per interval
+        d = kl_divergence_quantile(x, y)
+        expected = torch.log(torch.tensor(2.0))
+        assert torch.allclose(d, expected * torch.ones_like(d), atol=0.05)
 
 
 class TestCombinedDistributionLoss:
@@ -137,6 +147,14 @@ class TestCombinedDistributionLoss:
         loss_fn = CombinedDistributionLoss({"cramer": 1.0, "wasserstein1": 0.0})
         _, components = loss_fn(x, y)
         assert "wasserstein1" not in components
+
+    def test_kl_divergence_component(self, sample_quantile_grids):
+        x = sample_quantile_grids(8, 64)
+        y = sample_quantile_grids(8, 64)
+        loss_fn = CombinedDistributionLoss({"cramer": 1.0, "kl_divergence": 0.5})
+        total, components = loss_fn(x, y)
+        assert "cramer" in components
+        assert "kl_divergence" in components
 
 
 class TestDistanceOrdering:
