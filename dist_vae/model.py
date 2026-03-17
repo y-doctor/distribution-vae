@@ -6,6 +6,10 @@ The decoder maps latent vectors back to quantile grids, enforcing monotonicity.
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
+from dist_vae.data import quantile_grid_to_samples, samples_to_quantile_grid
+from dist_vae.losses import CombinedDistributionLoss
 
 
 class DistributionEncoder(nn.Module):
@@ -21,7 +25,22 @@ class DistributionEncoder(nn.Module):
     """
 
     def __init__(self, grid_size: int, latent_dim: int, hidden_dim: int = 128) -> None:
-        raise NotImplementedError
+        super().__init__()
+        self.grid_size = grid_size
+        self.latent_dim = latent_dim
+
+        self.convs = nn.Sequential(
+            nn.Conv1d(1, hidden_dim // 4, kernel_size=7, stride=2, padding=3),
+            nn.GELU(),
+            nn.Conv1d(hidden_dim // 4, hidden_dim // 2, kernel_size=5, stride=2, padding=2),
+            nn.GELU(),
+            nn.Conv1d(hidden_dim // 2, hidden_dim, kernel_size=3, stride=2, padding=1),
+            nn.GELU(),
+            nn.AdaptiveAvgPool1d(1),
+        )
+
+        self.fc_mu = nn.Linear(hidden_dim, latent_dim)
+        self.fc_logvar = nn.Linear(hidden_dim, latent_dim)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Encode quantile grid to latent parameters.
@@ -32,13 +51,16 @@ class DistributionEncoder(nn.Module):
         Returns:
             Tuple of (mu, logvar), each shape (batch, latent_dim).
         """
-        raise NotImplementedError
+        h = x.unsqueeze(1)  # (batch, 1, grid_size)
+        h = self.convs(h)   # (batch, hidden_dim, 1)
+        h = h.squeeze(-1)   # (batch, hidden_dim)
+        return self.fc_mu(h), self.fc_logvar(h)
 
 
 class DistributionDecoder(nn.Module):
     """1D CNN decoder with monotonicity enforcement.
 
-    Architecture: Linear → reshape → ConvTranspose1d stack → interpolate.
+    Architecture: Linear -> reshape -> ConvTranspose1d stack -> interpolate.
     Monotonicity is enforced via start_value + cumsum(softplus(deltas)).
 
     Args:
@@ -48,7 +70,21 @@ class DistributionDecoder(nn.Module):
     """
 
     def __init__(self, grid_size: int, latent_dim: int, hidden_dim: int = 128) -> None:
-        raise NotImplementedError
+        super().__init__()
+        self.grid_size = grid_size
+        self.initial_length = 8
+
+        self.fc = nn.Linear(latent_dim, hidden_dim * self.initial_length)
+
+        self.deconvs = nn.Sequential(
+            nn.ConvTranspose1d(hidden_dim, hidden_dim // 2, kernel_size=4, stride=2, padding=1),
+            nn.GELU(),
+            nn.ConvTranspose1d(hidden_dim // 2, hidden_dim // 4, kernel_size=4, stride=2, padding=1),
+            nn.GELU(),
+            nn.ConvTranspose1d(hidden_dim // 4, 1, kernel_size=4, stride=2, padding=1),
+        )
+
+        self.hidden_dim = hidden_dim
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         """Decode latent vector to monotonic quantile grid.
@@ -59,7 +95,21 @@ class DistributionDecoder(nn.Module):
         Returns:
             Monotonically non-decreasing quantile grid, shape (batch, grid_size).
         """
-        raise NotImplementedError
+        h = self.fc(z)  # (batch, hidden_dim * initial_length)
+        h = h.view(-1, self.hidden_dim, self.initial_length)  # (batch, hidden_dim, 8)
+        h = self.deconvs(h)  # (batch, 1, ~64)
+        h = h.squeeze(1)     # (batch, ~64)
+
+        # Interpolate to target grid size
+        if h.shape[-1] != self.grid_size:
+            h = F.interpolate(
+                h.unsqueeze(1), size=self.grid_size, mode="linear", align_corners=True
+            ).squeeze(1)
+
+        # Enforce monotonicity: start + cumsum(softplus(deltas))
+        start = h[:, :1]
+        deltas = F.softplus(h[:, 1:])
+        return torch.cat([start, start + torch.cumsum(deltas, dim=-1)], dim=-1)
 
 
 class DistributionVAE(nn.Module):
@@ -84,19 +134,26 @@ class DistributionVAE(nn.Module):
         beta: float = 0.01,
         loss_config: dict[str, float] | None = None,
     ) -> None:
-        raise NotImplementedError
+        super().__init__()
+        self.grid_size = grid_size
+        self.latent_dim = latent_dim
+        self.beta = beta
+        self.current_beta = beta
+
+        self.encoder = DistributionEncoder(grid_size, latent_dim, hidden_dim)
+        self.decoder = DistributionDecoder(grid_size, latent_dim, hidden_dim)
+
+        if loss_config is None:
+            loss_config = {"cramer": 1.0}
+        self.loss_fn = CombinedDistributionLoss(loss_config)
 
     def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
-        """Reparameterization trick: sample z = mu + std * epsilon.
-
-        Args:
-            mu: Mean of the latent distribution, shape (batch, latent_dim).
-            logvar: Log variance, shape (batch, latent_dim).
-
-        Returns:
-            Sampled latent vector, shape (batch, latent_dim).
-        """
-        raise NotImplementedError
+        """Reparameterization trick: sample z = mu + std * epsilon."""
+        if self.training:
+            std = torch.exp(0.5 * logvar)
+            eps = torch.randn_like(std)
+            return mu + std * eps
+        return mu
 
     def forward(
         self, quantile_grid: torch.Tensor
@@ -109,7 +166,10 @@ class DistributionVAE(nn.Module):
         Returns:
             Tuple of (reconstruction, mu, logvar, z).
         """
-        raise NotImplementedError
+        mu, logvar = self.encoder(quantile_grid)
+        z = self.reparameterize(mu, logvar)
+        recon = self.decoder(z)
+        return recon, mu, logvar, z
 
     def compute_loss(
         self,
@@ -118,60 +178,38 @@ class DistributionVAE(nn.Module):
         mu: torch.Tensor,
         logvar: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
-        """Compute VAE loss with distributional reconstruction loss and KL divergence.
+        """Compute VAE loss with distributional reconstruction loss and KL divergence."""
+        # Reconstruction loss
+        recon_total, recon_components = self.loss_fn(input_grid, recon)
 
-        Args:
-            input_grid: Original quantile grid, shape (batch, grid_size).
-            recon: Reconstructed quantile grid, shape (batch, grid_size).
-            mu: Latent mean, shape (batch, latent_dim).
-            logvar: Latent log variance, shape (batch, latent_dim).
+        # KL divergence: -0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+        kl = -0.5 * torch.mean(torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1))
 
-        Returns:
-            Dictionary with keys 'total', 'recon', 'kl', plus per-component
-            reconstruction losses.
-        """
-        raise NotImplementedError
+        total = recon_total + self.current_beta * kl
+
+        result = {"total": total, "recon": recon_total, "kl": kl}
+        for name, val in recon_components.items():
+            result[f"recon_{name}"] = val.mean()
+        return result
 
     def encode_distribution(
         self, raw_samples: torch.Tensor, n_valid: int | None = None
     ) -> torch.Tensor:
-        """Convenience: encode raw samples to latent mean.
-
-        Sorts samples, interpolates to quantile grid, and returns mu.
-
-        Args:
-            raw_samples: Raw 1D samples, shape (batch, n_samples).
-            n_valid: Number of valid samples per batch element (if padded).
-
-        Returns:
-            Latent mean mu, shape (batch, latent_dim).
-        """
-        raise NotImplementedError
+        """Convenience: encode raw samples to latent mean."""
+        grid = samples_to_quantile_grid(raw_samples, self.grid_size, n_valid=n_valid)
+        if grid.dim() == 1:
+            grid = grid.unsqueeze(0)
+        mu, _ = self.encoder(grid)
+        return mu
 
     def decode_to_samples(self, z: torch.Tensor, n_samples: int) -> torch.Tensor:
-        """Convenience: decode latent vector to sorted samples.
-
-        Args:
-            z: Latent vector, shape (batch, latent_dim).
-            n_samples: Number of output samples.
-
-        Returns:
-            Sorted samples, shape (batch, n_samples).
-        """
-        raise NotImplementedError
+        """Convenience: decode latent vector to sorted samples."""
+        grid = self.decoder(z)
+        return quantile_grid_to_samples(grid, n_samples)
 
     @staticmethod
     def samples_to_grid(
         samples: torch.Tensor, grid_size: int = 256, n_valid: int | None = None
     ) -> torch.Tensor:
-        """Convert raw samples to a quantile grid.
-
-        Args:
-            samples: Raw 1D samples, shape (batch, n_samples).
-            grid_size: Target grid size.
-            n_valid: Number of valid samples per batch element.
-
-        Returns:
-            Quantile grid, shape (batch, grid_size).
-        """
-        raise NotImplementedError
+        """Convert raw samples to a quantile grid."""
+        return samples_to_quantile_grid(samples, grid_size, n_valid=n_valid)
