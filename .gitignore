@@ -1,0 +1,37 @@
+# Data
+data/*.h5ad
+data/*.h5
+data/*.npz
+
+# Checkpoints
+checkpoints/*.pt
+checkpoints/*.pth
+
+# Logs
+wandb/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Eval outputs
+eval_results/
