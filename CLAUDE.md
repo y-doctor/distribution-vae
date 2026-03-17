@@ -15,6 +15,33 @@ A PyTorch library for encoding arbitrary-sized 1D empirical distributions into f
 5. Check `labbook/TASKS.md` for what's in progress, what's done, and what's open
 6. If another agent is currently working (check `labbook/LOCKS.md`), pick a non-conflicting task
 
+**During the session — periodic status check-ins (every 30 minutes):**
+
+Every 30 minutes of active work, write a short status pulse to `labbook/entries/`. Rules:
+1. Only write if you did meaningful work in that 30-minute window. If you were idle or waiting, skip it.
+2. Use filename format: `YYYY-MM-DD_HHMM_pulse_<short_description>.md`
+3. Keep it short — use this template:
+
+```markdown
+# Pulse: [what you're working on]
+**Date**: YYYY-MM-DD HH:MM UTC
+**Task**: [task from TASKS.md]
+**Status**: [on track / blocked / pivoting]
+
+## Progress this segment
+- [1-3 bullet points of what happened]
+
+## Current blockers
+- [any blockers, or "None"]
+
+## Next 30 min plan
+- [what you'll do next]
+```
+
+4. Also update `labbook/STATUS.md` → "What's in progress" section with your current state
+5. Commit the pulse with message: `[labbook] pulse: <brief description>`
+6. If blocked, note it clearly so the director or other agents can see it in STATUS.md
+
 **Before ending any session, do this:**
 
 1. Write a labbook entry (see format below)
