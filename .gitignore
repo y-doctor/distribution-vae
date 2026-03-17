@@ -35,3 +35,6 @@ Thumbs.db
 
 # Eval outputs
 eval_results/
+
+# Download cache artifacts
+https:/
