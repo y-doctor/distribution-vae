@@ -1,25 +1,34 @@
 # Project Status
 
-**Last updated**: 2026-03-17 15:00 UTC
-**Updated by**: Initial scaffold
+**Last updated**: 2026-03-17 16:00 UTC
+**Updated by**: Full implementation session
 
 ## What works
-- Project skeleton created with all interfaces defined
-- pyproject.toml installable
-- All test files have signatures
+- `dist_vae/losses.py` — All 3 loss functions + CombinedDistributionLoss (17 tests pass)
+- `dist_vae/data.py` — SyntheticDistributionDataset, PerturbationDistributionDataset, quantile grid utilities (14 tests pass)
+- `dist_vae/model.py` — DistributionEncoder, DistributionDecoder, DistributionVAE (14 tests pass, 1 CUDA skipped)
+- `dist_vae/train.py` — Trainer with KL warmup, gradient clipping, checkpointing
+- `dist_vae/eval.py` — All evaluation functions and plotting
+- `scripts/` — All 4 CLI scripts implemented
+- End-to-end synthetic training verified (loss decreases correctly)
+- Package installable via `pip install -e ".[dev]"`
+- All 45 tests pass on CPU
 
 ## What's broken / blocked
-- No implementations yet — all modules raise NotImplementedError
+- Nothing currently broken
+- CUDA test skipped (no GPU in test environment)
+- Real data (Norman et al.) not yet tested (requires download)
 
 ## What's in progress
-- Nothing yet
+- Nothing
 
 ## Next priorities
-1. Implement losses.py + tests
-2. Implement data.py + tests
-3. Implement model.py + tests
-4. Implement train.py
-5. Implement eval.py
-6. Scripts + download
-7. End-to-end synthetic test
-8. End-to-end real data test
+1. Download and test with real Perturb-seq data
+2. Tune hyperparameters on real data
+3. Add more evaluation tests
+4. Profile and optimize for large datasets
+
+## Environment
+- Python version: 3.11
+- PyTorch version: 2.10.0
+- Last tested on: CPU, Linux
