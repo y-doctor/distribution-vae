@@ -66,6 +66,10 @@ class Trainer:
         )
 
         self.best_val_loss = float("inf")
+        self.snapshot_every = log_cfg.get("snapshot_every", 25)
+
+        # Cache a few fixed val examples for reconstruction snapshots
+        self._snapshot_grids = self._get_snapshot_examples(val_dataset, n=6)
 
         # wandb
         self._wandb = None
@@ -133,6 +137,14 @@ class Trainer:
                     f"beta={self.model.current_beta:.4f} lr={self.scheduler.get_last_lr()[0]:.2e}"
                 )
 
+            # Reconstruction snapshots
+            if self.snapshot_every > 0 and (
+                epoch == 0
+                or (epoch + 1) % self.snapshot_every == 0
+                or epoch == n_epochs - 1
+            ):
+                self._save_reconstruction_snapshot(epoch + 1)
+
             if self._wandb is not None:
                 self._wandb.log({
                     "epoch": epoch,
@@ -194,6 +206,63 @@ class Trainer:
             n_batches += 1
 
         return {k: v / max(n_batches, 1) for k, v in total_metrics.items()}
+
+    @staticmethod
+    def _get_snapshot_examples(dataset: Dataset, n: int = 6) -> torch.Tensor:
+        """Extract a fixed set of examples for reconstruction snapshots."""
+        indices = list(range(min(n, len(dataset))))
+        grids = torch.stack([dataset[i][0] for i in indices])
+        return grids
+
+    @torch.no_grad()
+    def _save_reconstruction_snapshot(self, epoch: int) -> None:
+        """Save input vs reconstruction plots for fixed val examples."""
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            import numpy as np
+        except ImportError:
+            return
+
+        self.model.eval()
+        grids = self._snapshot_grids.to(self.device)
+        recon, _, _, _ = self.model(grids)
+        grids_np = grids.cpu().numpy()
+        recon_np = recon.cpu().numpy()
+
+        n = len(grids_np)
+        fig, axes = plt.subplots(2, n, figsize=(3.5 * n, 6), constrained_layout=True)
+        x = np.linspace(0, 1, grids_np.shape[1])
+
+        for i in range(n):
+            # Top row: overlay quantile functions
+            ax = axes[0, i]
+            ax.plot(x, grids_np[i], label="input", color="steelblue", linewidth=1.5)
+            ax.plot(x, recon_np[i], label="recon", color="coral", linewidth=1.5, linestyle="--")
+            ax.set_title(f"Example {i}", fontsize=9)
+            ax.set_xlabel("quantile", fontsize=8)
+            ax.set_ylabel("value", fontsize=8)
+            ax.tick_params(labelsize=7)
+            if i == 0:
+                ax.legend(fontsize=7)
+
+            # Bottom row: histogram view (sample from quantile grids)
+            ax = axes[1, i]
+            ax.hist(grids_np[i], bins=40, density=True, alpha=0.5, color="steelblue", label="input", edgecolor="none")
+            ax.hist(recon_np[i], bins=40, density=True, alpha=0.5, color="coral", label="recon", edgecolor="none")
+            ax.set_xlabel("value", fontsize=8)
+            ax.tick_params(labelsize=7)
+            ax.set_yticks([])
+            if i == 0:
+                ax.legend(fontsize=7)
+
+        fig.suptitle(f"Reconstruction at epoch {epoch}", fontsize=12)
+
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        path = self.checkpoint_dir / f"recon_epoch_{epoch:04d}.png"
+        fig.savefig(path, dpi=120)
+        plt.close(fig)
 
     def _save_training_curves(self, history: dict[str, list[float]]) -> None:
         """Save training curve plots to checkpoint directory."""
