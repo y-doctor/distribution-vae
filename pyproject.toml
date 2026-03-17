@@ -21,6 +21,9 @@ dev = [
     "umap-learn>=0.5",
 ]
 
+[tool.setuptools.packages.find]
+include = ["dist_vae*"]
+
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"

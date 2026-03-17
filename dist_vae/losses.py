@@ -18,7 +18,7 @@ def cramer_distance(sorted_x: torch.Tensor, sorted_y: torch.Tensor) -> torch.Ten
     Returns:
         Per-sample Cramer distance, shape (batch,).
     """
-    raise NotImplementedError
+    return torch.mean((sorted_x - sorted_y) ** 2, dim=-1)
 
 
 def wasserstein1_distance(sorted_x: torch.Tensor, sorted_y: torch.Tensor) -> torch.Tensor:
@@ -31,7 +31,7 @@ def wasserstein1_distance(sorted_x: torch.Tensor, sorted_y: torch.Tensor) -> tor
     Returns:
         Per-sample W1 distance, shape (batch,).
     """
-    raise NotImplementedError
+    return torch.mean(torch.abs(sorted_x - sorted_y), dim=-1)
 
 
 def ks_distance_smooth(
@@ -52,7 +52,8 @@ def ks_distance_smooth(
     Returns:
         Per-sample smooth KS distance, shape (batch,).
     """
-    raise NotImplementedError
+    abs_diff = torch.abs(sorted_x - sorted_y)
+    return temperature * torch.logsumexp(abs_diff / temperature, dim=-1)
 
 
 class CombinedDistributionLoss(nn.Module):
@@ -65,7 +66,15 @@ class CombinedDistributionLoss(nn.Module):
     """
 
     def __init__(self, weights: dict[str, float], ks_temperature: float = 0.01) -> None:
-        raise NotImplementedError
+        super().__init__()
+        self.weights = weights
+        self.ks_temperature = ks_temperature
+
+        self._loss_fns: dict[str, callable] = {
+            "cramer": cramer_distance,
+            "wasserstein1": wasserstein1_distance,
+            "ks_smooth": lambda x, y: ks_distance_smooth(x, y, temperature=self.ks_temperature),
+        }
 
     def forward(
         self, sorted_x: torch.Tensor, sorted_y: torch.Tensor
@@ -80,4 +89,13 @@ class CombinedDistributionLoss(nn.Module):
             Tuple of (total_loss, component_dict) where total_loss is a scalar
             and component_dict maps loss names to per-sample values (batch,).
         """
-        raise NotImplementedError
+        components: dict[str, torch.Tensor] = {}
+        total = torch.tensor(0.0, device=sorted_x.device, dtype=sorted_x.dtype)
+
+        for name, weight in self.weights.items():
+            if weight > 0 and name in self._loss_fns:
+                loss_val = self._loss_fns[name](sorted_x, sorted_y)
+                components[name] = loss_val
+                total = total + weight * loss_val.mean()
+
+        return total, components
