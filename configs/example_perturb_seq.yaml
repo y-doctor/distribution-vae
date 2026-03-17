@@ -9,7 +9,7 @@ model:
   beta_warmup_epochs: 10
 
 data:
-  perturbation_key: "gene"
+  perturbation_key: "perturbation"
   min_cells: 30
   gene_subset: null
 

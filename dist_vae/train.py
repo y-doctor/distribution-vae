@@ -146,6 +146,9 @@ class Trainer:
                     "beta": self.model.current_beta,
                 })
 
+        # Save training curves
+        self._save_training_curves(history)
+
         return history
 
     def _train_epoch(self, epoch: int) -> dict[str, float]:
@@ -191,6 +194,59 @@ class Trainer:
             n_batches += 1
 
         return {k: v / max(n_batches, 1) for k, v in total_metrics.items()}
+
+    def _save_training_curves(self, history: dict[str, list[float]]) -> None:
+        """Save training curve plots to checkpoint directory."""
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+        except ImportError:
+            return
+
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        epochs = range(1, len(history["train_loss"]) + 1)
+
+        fig, axes = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
+
+        # Total loss
+        ax = axes[0, 0]
+        ax.plot(epochs, history["train_loss"], label="train")
+        ax.plot(epochs, history["val_loss"], label="val")
+        ax.set_ylabel("Total loss")
+        ax.set_xlabel("Epoch")
+        ax.legend()
+        ax.set_title("Total loss")
+
+        # Recon loss
+        ax = axes[0, 1]
+        ax.plot(epochs, history["train_recon"], label="train")
+        ax.plot(epochs, history["val_recon"], label="val")
+        ax.set_ylabel("Recon loss (Cramer)")
+        ax.set_xlabel("Epoch")
+        ax.legend()
+        ax.set_title("Reconstruction loss")
+
+        # KL divergence
+        ax = axes[1, 0]
+        ax.plot(epochs, history["train_kl"], label="train KL")
+        ax.plot(epochs, history["beta"], label="beta", linestyle="--", color="gray")
+        ax.set_ylabel("KL / beta")
+        ax.set_xlabel("Epoch")
+        ax.legend()
+        ax.set_title("KL divergence & beta warmup")
+
+        # Learning rate
+        ax = axes[1, 1]
+        ax.plot(epochs, history["lr"])
+        ax.set_ylabel("Learning rate")
+        ax.set_xlabel("Epoch")
+        ax.set_title("Learning rate schedule")
+
+        path = self.checkpoint_dir / "training_curves.png"
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        print(f"Training curves saved to {path}")
 
     def _save_checkpoint(self, path: str, metrics: dict[str, float]) -> None:
         """Save model checkpoint."""
