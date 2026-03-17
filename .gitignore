@@ -2,6 +2,7 @@
 data/*.h5ad
 data/*.h5
 data/*.npz
+data/*.png
 
 # Checkpoints
 checkpoints/*.pt
