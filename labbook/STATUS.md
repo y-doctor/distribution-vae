@@ -1,7 +1,7 @@
 # Project Status
 
-**Last updated**: 2026-03-17 16:00 UTC
-**Updated by**: Full implementation session
+**Last updated**: 2026-03-17 17:00 UTC
+**Updated by**: Session close-out — PR ready for merge
 
 ## What works
 - `dist_vae/losses.py` — All 3 loss functions + CombinedDistributionLoss (17 tests pass)
@@ -20,13 +20,14 @@
 - Real data (Norman et al.) not yet tested (requires download)
 
 ## What's in progress
-- Nothing
+- PR #1 open for merge — full implementation of distribution-vae
 
 ## Next priorities
-1. Download and test with real Perturb-seq data
-2. Tune hyperparameters on real data
-3. Add more evaluation tests
-4. Profile and optimize for large datasets
+1. Initial training run with synthetic data (first priority after merge)
+2. Download and test with real Perturb-seq data
+3. Tune hyperparameters on real data
+4. Add integration tests for training loop
+5. Profile and optimize for large datasets
 
 ## Environment
 - Python version: 3.11
