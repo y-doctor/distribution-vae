@@ -1,0 +1,28 @@
+model:
+  grid_size: 256
+  latent_dim: 16
+  hidden_dim: 256
+  beta: 0.001706445841834938
+  beta_warmup_epochs: 3
+  free_bits: 0.0
+data:
+  perturbation_key: perturbation
+  min_cells: 30
+  gene_subset: null
+training:
+  epochs: 500
+  batch_size: 64
+  lr: 0.0012514406802433303
+  weight_decay: 1.1268889432377105e-05
+  grad_clip: 1.0
+  val_fraction: 0.1
+  seed: 42
+loss:
+  cramer: 1.0
+  wasserstein1: 0.0
+  kl_divergence: 0.0
+logging:
+  wandb: false
+  wandb_project: distribution-vae
+  print_every: 20
+  checkpoint_dir: checkpoints/
