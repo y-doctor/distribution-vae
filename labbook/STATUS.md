@@ -26,6 +26,11 @@
 ## What's in progress
 - (none)
 
+## Key finding: posterior collapse on real data
+- 1000-epoch run on mini Norman data achieves Cramer=0.020 but KL=2.0, latent range [-0.1, 0.04]
+- Model learns a single zero-inflated template, latent space is nearly unused
+- beta=0.01 is too aggressive — need to reduce to 0.001 or use free-bits
+
 ## What's in the repo (data files)
 - `data/synthetic_2k.h5ad` — 2000 synthetic distributions (2.1 MB, committed)
 - `data/mini_perturb_seq.h5ad` — Mini Norman 2019 Perturb-seq: 9452 cells x 100 genes x 10 perts (4.6 MB, committed)

@@ -38,7 +38,8 @@ Thumbs.db
 *.swo
 
 # Eval outputs
-eval_results/
+eval_results/*
+!eval_results/real_1k_epochs/
 
 # Download cache artifacts
 https:/
