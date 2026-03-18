@@ -18,6 +18,12 @@
 **Alternatives considered**: KL divergence (requires density estimation), MMD (kernel choice), sliced Wasserstein
 **Rationale**: On quantile grids, Cramer = MSE and W1 = MAE — trivially simple, fast, fully differentiable. No kernel or bandwidth choices. Smooth KS gives a max-deviation signal complementary to the average-deviation losses.
 
+## [2026-03-18] Optuna for hyperparameter optimization
+**Context**: Need automated hyperparameter tuning for the VAE
+**Decision**: Use Optuna with MedianPruner, optimizing val_recon loss. Add epoch_callback to Trainer rather than subclassing.
+**Alternatives considered**: Ray Tune (heavier dependency), custom grid search (less flexible), subclassing Trainer (code duplication)
+**Rationale**: Optuna is the standard for PyTorch HPO — lightweight, supports pruning, persistent storage, and distributed search. The epoch_callback approach is minimal and backwards-compatible (default None). val_recon is the right metric because total loss includes beta-scaled KL which varies across trials.
+
 ## [2026-03-17] Module boundaries for parallel development
 **Context**: Multiple agents will develop this simultaneously
 **Decision**: losses.py is pure functions (no state), model.py depends only on losses, data.py is independent, train/eval depend on everything

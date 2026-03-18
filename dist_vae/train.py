@@ -80,11 +80,19 @@ class Trainer:
             except ImportError:
                 pass
 
-    def train(self, n_epochs: int | None = None) -> dict[str, list[float]]:
+    def train(
+        self,
+        n_epochs: int | None = None,
+        epoch_callback: callable | None = None,
+    ) -> dict[str, list[float]]:
         """Run the training loop.
 
         Args:
             n_epochs: Number of epochs. If None, uses config value.
+            epoch_callback: Optional callback called after each epoch with
+                (epoch, metrics_dict). Useful for hyperparameter optimization
+                pruning. The metrics dict contains train_loss, val_loss,
+                val_recon, and val_kl.
 
         Returns:
             Training history dictionary.
@@ -117,6 +125,15 @@ class Trainer:
             history["val_kl"].append(val_metrics["kl"])
             history["lr"].append(self.scheduler.get_last_lr()[0])
             history["beta"].append(self.model.current_beta)
+
+            # Epoch callback (e.g., for Optuna pruning)
+            if epoch_callback is not None:
+                epoch_callback(epoch, {
+                    "train_loss": train_metrics["total"],
+                    "val_loss": val_metrics["total"],
+                    "val_recon": val_metrics["recon"],
+                    "val_kl": val_metrics["kl"],
+                })
 
             self.scheduler.step()
 
