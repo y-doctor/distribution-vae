@@ -116,6 +116,58 @@ def plot_reconstructions(
         plt.show()
 
 
+def plot_reconstructions_hist(
+    model: DistributionVAE,
+    dataset: Dataset,
+    n_examples: int = 9,
+    n_bins: int = 40,
+    save_path: str | Path | None = None,
+) -> None:
+    """Plot input vs reconstructed distributions as overlaid histograms (PDF view)."""
+    model.eval()
+    device = next(model.parameters()).device
+
+    n_cols = int(np.ceil(np.sqrt(n_examples)))
+    n_rows = int(np.ceil(n_examples / n_cols))
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 3 * n_rows))
+    axes = np.array(axes).flatten()
+
+    with torch.no_grad():
+        for i in range(n_examples):
+            grid, _, _ = dataset[i]
+            grid_in = grid.unsqueeze(0).to(device)
+            recon, _, _, _ = model(grid_in)
+
+            ax = axes[i]
+            inp_np = grid.cpu().numpy()
+            rec_np = recon[0].cpu().numpy()
+
+            ax.hist(
+                inp_np, bins=n_bins, density=True, alpha=0.5,
+                color="steelblue", label="Input", edgecolor="none",
+            )
+            ax.hist(
+                rec_np, bins=n_bins, density=True, alpha=0.5,
+                color="coral", label="Recon", edgecolor="none",
+            )
+            ax.set_title(_get_label(dataset, i), fontsize=8)
+            ax.set_xlabel("value", fontsize=8)
+            ax.set_yticks([])
+            if i == 0:
+                ax.legend(fontsize=8)
+
+    for i in range(n_examples, len(axes)):
+        axes[i].set_visible(False)
+
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        plt.close()
+    else:
+        plt.show()
+
+
 def plot_latent_space(
     model: DistributionVAE,
     dataset: Dataset,
@@ -310,6 +362,7 @@ def generate_eval_report(
 
     # Plots
     plot_reconstructions(model, dataset, n_examples=9, save_path=output_dir / "reconstructions.png")
+    plot_reconstructions_hist(model, dataset, n_examples=9, save_path=output_dir / "reconstructions_hist.png")
 
     n_data = len(dataset)
     if n_data >= 2:
