@@ -37,6 +37,30 @@ def wasserstein1_distance(sorted_x: torch.Tensor, sorted_y: torch.Tensor) -> tor
     return torch.mean(torch.abs(sorted_x - sorted_y), dim=-1)
 
 
+def ks_distance_smooth(
+    sorted_x: torch.Tensor,
+    sorted_y: torch.Tensor,
+    temperature: float = 100.0,
+) -> torch.Tensor:
+    """Smooth Kolmogorov-Smirnov distance between quantile functions.
+
+    Approximates the max absolute difference using a soft-max. This gives a
+    differentiable version of the KS statistic that measures the worst-case
+    deviation between two distributions.
+
+    Args:
+        sorted_x: Sorted quantile grid, shape (batch, grid_size).
+        sorted_y: Sorted quantile grid, shape (batch, grid_size).
+        temperature: Softmax temperature. Higher = closer to true max.
+
+    Returns:
+        Per-sample smooth KS distance, shape (batch,).
+    """
+    abs_diff = torch.abs(sorted_x - sorted_y)
+    # Soft-max approximation: logsumexp(t * x) / t
+    return torch.logsumexp(temperature * abs_diff, dim=-1) / temperature
+
+
 def kl_divergence_quantile(
     sorted_x: torch.Tensor,
     sorted_y: torch.Tensor,
