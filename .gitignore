@@ -8,6 +8,7 @@ data/*.png
 
 # Checkpoints
 checkpoints/
+checkpoints_*/
 
 # Logs
 wandb/
