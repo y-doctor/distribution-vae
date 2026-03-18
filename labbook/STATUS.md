@@ -1,68 +1,46 @@
 # Project Status
 
-**Last updated**: 2026-03-18 00:30 UTC
-**Updated by**: Session close-out — hyperopt module + report
+**Last updated**: 2026-03-18 02:15 UTC
+**Updated by**: Session — fix posterior collapse on real data
 
 ## What works
-- `dist_vae/losses.py` — All 3 loss functions + CombinedDistributionLoss (17 tests pass)
-- `dist_vae/data.py` — SyntheticDistributionDataset, PerturbationDistributionDataset, quantile grid utilities (14 tests pass)
-- `dist_vae/model.py` — DistributionEncoder, DistributionDecoder, DistributionVAE (14 tests pass, 1 CUDA skipped)
-- `dist_vae/train.py` — Trainer with KL warmup, gradient clipping, checkpointing, epoch_callback
-- `dist_vae/eval.py` — All evaluation functions and plotting
-- `dist_vae/hyperopt.py` — Optuna-based hyperparameter optimization with pruning (14 tests pass)
-- `scripts/` — All 5 CLI scripts implemented (train, evaluate, encode, download, hyperopt)
-- End-to-end synthetic training verified (loss decreases correctly)
-- Package installable via `pip install -e ".[dev,hyperopt]"`
-- All 60 tests pass on CPU
-**Last updated**: 2026-03-18 01:00 UTC
-**Updated by**: Session close-out — real data training + posterior collapse diagnosis
-
-## What works
-- `dist_vae/losses.py` — All 3 loss functions + ks_distance_smooth + CombinedDistributionLoss (47 tests pass)
+- `dist_vae/losses.py` — All loss functions + CombinedDistributionLoss (47 tests pass)
 - `dist_vae/data.py` — SyntheticDistributionDataset, PerturbationDistributionDataset, quantile grid utilities
-- `dist_vae/model.py` — DistributionEncoder, DistributionDecoder, DistributionVAE
-- `dist_vae/train.py` — Trainer with KL warmup, gradient clipping, checkpointing, training curve plots
-- `dist_vae/eval.py` — All evaluation functions and plotting (reconstructions, latent PCA, interpolations, latent statistics)
-- `scripts/` — All CLI scripts + generate_synthetic_dataset.py + make_mini_dataset.py
-- Full synthetic training verified: 100 epochs, loss converges, reconstructions reasonable
-- Evaluation pipeline generates all plots successfully
+- `dist_vae/model.py` — DistributionEncoder, DistributionDecoder, DistributionVAE with free-bits support
+- `dist_vae/train.py` — Trainer with KL warmup, gradient clipping, checkpointing, perturbation/gene labels in snapshots
+- `dist_vae/eval.py` — All evaluation functions with perturbation/gene labels in all plots
+- `scripts/` — All CLI scripts (train, evaluate, encode, download, hyperopt)
+- **Posterior collapse fixed** — beta=0.0001 + latent_dim=16 gives Cramer=0.0092, all 16 dims active
 - Package installable via `pip install -e ".[dev]"`
 - All 47 tests pass on CPU
-- Saved synthetic dataset at `data/synthetic_2k.h5ad` (2.1 MB)
-- Saved mini Norman et al. dataset at `data/mini_perturb_seq.h5ad` (4.6 MB) — 9452 cells x 100 genes x 10 perturbations
 
 ## What's broken / blocked
-- **Posterior collapse on real data** — the critical issue to fix next
-  - 1000-epoch run on mini Norman: Cramer=0.020 but KL=2.0, latent range [-0.1, 0.04]
-  - Model learns a single zero-inflated template, latent space nearly unused
-  - beta=0.01 is too aggressive for 1000 distributions with 32 latent dims
-- Partial latent collapse on synthetic data too (z_1 near-zero variance)
-- High latent correlations — poor disentanglement
+- Latent correlations still high — disentanglement could be improved
+- Tail reconstruction still imperfect for zero-inflated distributions
+- Only tested on mini Norman (100 genes, 10 perturbations) — needs full-scale validation
 
 ## What's in progress
 - Nothing — session ending
 
 ## Next priorities
-1. Run hyperopt on synthetic data end-to-end
-2. Download and test with real Perturb-seq data
-3. Tune hyperparameters on real data using hyperopt module
-- (none)
+1. Test best settings on full 500-gene Norman dataset
+2. Hyperparameter sweep: systematic search including free_bits
+3. Consider W1 loss for better tail differentiation
+4. Investigate total correlation penalty for disentanglement
+5. Add integration tests for training loop
 
 ## What's in the repo (data files)
 - `data/synthetic_2k.h5ad` — 2000 synthetic distributions (2.1 MB, committed)
-- `data/mini_perturb_seq.h5ad` — Mini Norman 2019 Perturb-seq: 9452 cells x 100 genes x 10 perts (4.6 MB, committed)
-- `data/sample_perturb_seq.h5ad` — Full preprocessed Norman 2019: 111k cells x 500 HVGs (gitignored, regenerate via download script)
+- `data/mini_perturb_seq.h5ad` — Mini Norman 2019: 9452 cells x 100 genes x 10 perts (4.6 MB, committed)
 
-## Next priorities
-1. **Fix posterior collapse** — try beta=0.001 or 0.0001, reduce latent_dim to 8-16, or implement free-bits
-2. Hyperparameter sweep: systematic search over beta, latent_dim, hidden_dim
-3. Consider log-transforming quantile grids or using W1 loss for better tail differentiation
-4. Add integration tests for training loop
-5. Profile memory usage on large datasets
+## Eval results
+- `eval_results/real_1k_epochs/` — Baseline: beta=0.01, d=32, 1000 epochs (COLLAPSED)
+- `eval_results/beta_0.001/` — beta=0.001, d=32, 500 epochs
+- `eval_results/beta_0.0001/` — beta=0.0001, d=32, 500 epochs
+- `eval_results/beta_0.0001_dim16/` — **BEST**: beta=0.0001, d=16, 500 epochs
+- `eval_results/beta_0.001_freebits/` — beta=0.001, d=32, free_bits=0.5, 500 epochs
 
 ## Environment
 - Python version: 3.11
 - PyTorch version: 2.10.0
-- Optuna version: 4.8.0
 - Last tested on: CPU, Linux
-- Last tested on: CPU, macOS Darwin 24.6.0

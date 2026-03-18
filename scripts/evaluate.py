@@ -28,6 +28,7 @@ def main() -> None:
         grid_size=grid_size,
         latent_dim=latent_dim,
         hidden_dim=model_cfg.get("hidden_dim", 128),
+        free_bits=model_cfg.get("free_bits", 0.0),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
