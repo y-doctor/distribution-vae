@@ -1,0 +1,33 @@
+# Experiment: larger model + mixed loss (kitchen sink)
+model:
+  grid_size: 256
+  latent_dim: 16
+  hidden_dim: 256
+  beta: 0.001
+  beta_warmup_epochs: 20
+  free_bits: 0.0
+
+data:
+  perturbation_key: "perturbation"
+  min_cells: 30
+  gene_subset: null
+
+training:
+  epochs: 500
+  batch_size: 256
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  grad_clip: 1.0
+  val_fraction: 0.1
+  seed: 42
+
+loss:
+  cramer: 0.5
+  wasserstein1: 0.5
+  kl_divergence: 0.0
+
+logging:
+  wandb: false
+  wandb_project: "distribution-vae"
+  print_every: 10
+  checkpoint_dir: "checkpoints_large_mixed/"
