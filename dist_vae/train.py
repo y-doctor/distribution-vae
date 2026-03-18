@@ -70,6 +70,7 @@ class Trainer:
 
         # Cache a few fixed val examples for reconstruction snapshots
         self._snapshot_grids = self._get_snapshot_examples(val_dataset, n=6)
+        self._snapshot_labels = self._get_snapshot_labels(val_dataset, n=6)
 
         # wandb
         self._wandb = None
@@ -231,6 +232,24 @@ class Trainer:
         grids = torch.stack([dataset[i][0] for i in indices])
         return grids
 
+    @staticmethod
+    def _get_snapshot_labels(dataset: Dataset, n: int = 6) -> list[str]:
+        """Get labels for snapshot examples."""
+        # Unwrap Subset to get the underlying dataset
+        actual_dataset = dataset
+        indices = list(range(min(n, len(dataset))))
+        if hasattr(dataset, "dataset"):
+            actual_dataset = dataset.dataset
+            if hasattr(dataset, "indices"):
+                indices = [dataset.indices[i] for i in range(min(n, len(dataset)))]
+        if hasattr(actual_dataset, "get_metadata"):
+            labels = []
+            for idx in indices:
+                meta = actual_dataset.get_metadata(idx)
+                labels.append(f"{meta['perturbation_name']} / {meta['gene_name']}")
+            return labels
+        return [f"Example {i}" for i in range(min(n, len(dataset)))]
+
     @torch.no_grad()
     def _save_reconstruction_snapshot(self, epoch: int) -> None:
         """Save input vs reconstruction plots for fixed val examples."""
@@ -257,7 +276,8 @@ class Trainer:
             ax = axes[0, i]
             ax.plot(x, grids_np[i], label="input", color="steelblue", linewidth=1.5)
             ax.plot(x, recon_np[i], label="recon", color="coral", linewidth=1.5, linestyle="--")
-            ax.set_title(f"Example {i}", fontsize=9)
+            label = self._snapshot_labels[i] if i < len(self._snapshot_labels) else f"Example {i}"
+            ax.set_title(label, fontsize=7)
             ax.set_xlabel("quantile", fontsize=8)
             ax.set_ylabel("value", fontsize=8)
             ax.tick_params(labelsize=7)
