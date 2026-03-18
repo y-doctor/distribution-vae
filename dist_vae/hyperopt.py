@@ -149,7 +149,9 @@ def create_objective(
 
         # Override training epochs and suppress noisy output
         config.setdefault("training", {})["epochs"] = n_epochs
-        config.setdefault("logging", {})["print_every"] = n_epochs + 1
+        # Use base config's print_every if set, otherwise suppress
+        if "print_every" not in base_config.get("logging", {}):
+            config.setdefault("logging", {})["print_every"] = n_epochs + 1
         config.setdefault("logging", {})["snapshot_every"] = 0
 
         # Use a temp dir for checkpoints to avoid polluting the workspace
