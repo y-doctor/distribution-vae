@@ -1,12 +1,15 @@
-# Configuration for Norman et al. 2019 (K562 CRISPRa) sample data
-# Inherits defaults from default.yaml — only overrides are listed here
+# Configuration for Norman et al. 2019 (K562 CRISPRa) Perturb-seq data
+# Tuned to avoid posterior collapse on real scRNA-seq distributions.
+# Key changes from default: lower beta (0.0001), smaller latent_dim (16),
+# longer warmup (20 epochs), more training epochs (500).
 
 model:
   grid_size: 256
-  latent_dim: 32
+  latent_dim: 16
   hidden_dim: 128
-  beta: 0.01
-  beta_warmup_epochs: 10
+  beta: 0.0001
+  beta_warmup_epochs: 20
+  free_bits: 0.0
 
 data:
   perturbation_key: "perturbation"
@@ -14,7 +17,7 @@ data:
   gene_subset: null
 
 training:
-  epochs: 200
+  epochs: 500
   batch_size: 256
   lr: 1.0e-3
   weight_decay: 1.0e-4

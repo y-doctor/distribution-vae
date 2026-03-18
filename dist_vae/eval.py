@@ -67,6 +67,14 @@ def evaluate_reconstruction(
     }
 
 
+def _get_label(dataset: Dataset, idx: int) -> str:
+    """Get a human-readable label for a dataset sample."""
+    if hasattr(dataset, "get_metadata"):
+        meta = dataset.get_metadata(idx)
+        return f"{meta['perturbation_name']} / {meta['gene_name']}"
+    return f"Sample {idx}"
+
+
 def plot_reconstructions(
     model: DistributionVAE,
     dataset: Dataset,
@@ -93,7 +101,7 @@ def plot_reconstructions(
             x = np.linspace(0, 1, grid.shape[-1])
             ax.plot(x, grid.cpu().numpy(), label="Input", alpha=0.8)
             ax.plot(x, recon[0].cpu().numpy(), label="Recon", alpha=0.8, linestyle="--")
-            ax.set_title(f"Sample {i}")
+            ax.set_title(_get_label(dataset, i), fontsize=7)
             if i == 0:
                 ax.legend(fontsize=8)
 
@@ -133,6 +141,13 @@ def plot_latent_space(
     latents = torch.cat(all_mu).numpy()
     labels = torch.cat(all_labels).numpy()
 
+    # Build name mapping if dataset has metadata
+    has_names = hasattr(dataset, "perturbation_names") and hasattr(dataset, "gene_names")
+    if has_names:
+        name_list = dataset.perturbation_names if color_by == "perturbation" else dataset.gene_names
+    else:
+        name_list = None
+
     if method == "umap":
         try:
             from umap import UMAP
@@ -147,15 +162,33 @@ def plot_latent_space(
 
     embedding = reducer.fit_transform(latents)
 
-    fig, ax = plt.subplots(figsize=(8, 6))
-    scatter = ax.scatter(
-        embedding[:, 0], embedding[:, 1],
-        c=labels, cmap="tab20", alpha=0.6, s=10,
-    )
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    if name_list is not None:
+        # Plot each group with its name in the legend
+        unique_labels = sorted(set(labels))
+        cmap = plt.cm.get_cmap("tab20", len(unique_labels))
+        for i, lbl in enumerate(unique_labels):
+            mask = labels == lbl
+            name = name_list[int(lbl)] if int(lbl) < len(name_list) else f"{color_by} {lbl}"
+            ax.scatter(
+                embedding[mask, 0], embedding[mask, 1],
+                c=[cmap(i)], alpha=0.6, s=15, label=name,
+            )
+        ax.legend(
+            fontsize=7, loc="center left", bbox_to_anchor=(1.02, 0.5),
+            title=color_by.capitalize(), title_fontsize=8,
+        )
+    else:
+        scatter = ax.scatter(
+            embedding[:, 0], embedding[:, 1],
+            c=labels, cmap="tab20", alpha=0.6, s=10,
+        )
+        plt.colorbar(scatter, ax=ax, label=color_by)
+
     ax.set_xlabel(f"{method.upper()} 1")
     ax.set_ylabel(f"{method.upper()} 2")
     ax.set_title(f"Latent space ({method.upper()}, colored by {color_by})")
-    plt.colorbar(scatter, ax=ax, label=color_by)
 
     plt.tight_layout()
     if save_path:
@@ -191,12 +224,20 @@ def plot_interpolations(
             mu_a, _ = model.encoder(grid_a)
             mu_b, _ = model.encoder(grid_b)
 
+            label_a = _get_label(dataset, idx_a)
+            label_b = _get_label(dataset, idx_b)
+
             x = np.linspace(0, 1, model.grid_size)
             for col, alpha in enumerate(np.linspace(0, 1, n_steps)):
                 z = (1 - alpha) * mu_a + alpha * mu_b
                 recon = model.decoder(z)
                 axes[row, col].plot(x, recon[0].cpu().numpy(), color="steelblue")
-                axes[row, col].set_title(f"α={alpha:.2f}", fontsize=8)
+                if col == 0:
+                    axes[row, col].set_title(label_a, fontsize=6)
+                elif col == n_steps - 1:
+                    axes[row, col].set_title(label_b, fontsize=6)
+                else:
+                    axes[row, col].set_title(f"α={alpha:.2f}", fontsize=8)
                 axes[row, col].set_xticks([])
                 axes[row, col].set_yticks([])
 

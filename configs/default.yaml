@@ -4,6 +4,7 @@ model:
   hidden_dim: 128
   beta: 0.01
   beta_warmup_epochs: 10
+  free_bits: 0.0
 
 data:
   perturbation_key: "perturbation"

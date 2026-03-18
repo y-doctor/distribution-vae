@@ -7,9 +7,7 @@ data/*.npz
 data/*.png
 
 # Checkpoints
-checkpoints/*.pt
-checkpoints/*.pth
-checkpoints/*.png
+checkpoints/
 
 # Logs
 wandb/
@@ -40,6 +38,10 @@ Thumbs.db
 # Eval outputs
 eval_results/*
 !eval_results/real_1k_epochs/
+!eval_results/beta_0.001/
+!eval_results/beta_0.0001/
+!eval_results/beta_0.0001_dim16/
+!eval_results/beta_0.001_freebits/
 
 # Download cache artifacts
 https:/

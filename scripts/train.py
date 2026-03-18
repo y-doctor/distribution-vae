@@ -120,6 +120,7 @@ def main() -> None:
         hidden_dim=model_cfg.get("hidden_dim", 128),
         beta=model_cfg.get("beta", 0.01),
         loss_config=loss_weights,
+        free_bits=model_cfg.get("free_bits", 0.0),
     ).to(device)
 
     n_params = sum(p.numel() for p in model.parameters())
