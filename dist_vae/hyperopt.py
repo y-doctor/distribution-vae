@@ -58,6 +58,8 @@ def default_search_space() -> dict[str, dict]:
         # W1 is ~10x larger than Cramer in magnitude, so search on lower scale
         "loss.cramer": {"type": "float", "low": 0.0, "high": 1.0},
         "loss.wasserstein1": {"type": "float", "low": 0.0, "high": 0.1},
+        # Distributional KL from quantile density ratios — similar scale to Cramer
+        "loss.kl_divergence": {"type": "float", "low": 0.0, "high": 1.0},
     }
 
 
