@@ -20,6 +20,9 @@ dev = [
     "wandb>=0.15",
     "umap-learn>=0.5",
 ]
+hyperopt = [
+    "optuna>=3.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["dist_vae*"]
