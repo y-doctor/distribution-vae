@@ -1,8 +1,8 @@
 # Task Board
 
 ## TODO
+- [ ] Train on mini real data (mini_perturb_seq.h5ad) and evaluate — M
 - [ ] Hyperparameter tuning: try beta=0.02-0.05, latent_dim=16, hidden_dim=256 — M
-- [ ] End-to-end test: Norman et al. → train → encode → eval — M
 - [ ] Tune hyperparameters on real data — M
 - [ ] Add integration tests for training loop — S
 - [ ] Profile memory usage on large datasets — S
@@ -28,3 +28,4 @@
 - [x] First full synthetic training run (100 epochs) — completed 2026-03-18 00:15 — entries/2026-03-18_0015_first_synthetic_training_run.md
 - [x] Add ks_distance_smooth to losses.py — completed 2026-03-18 00:15
 - [x] Generate and save synthetic dataset to data/ — completed 2026-03-18 00:15
+- [x] Download Norman et al. and create mini dataset — completed 2026-03-18 00:30 — 9452 cells x 100 genes x 10 perts (4.6 MB)

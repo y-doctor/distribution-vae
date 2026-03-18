@@ -34,3 +34,9 @@
 **Decision**: Generate once, save to `data/synthetic_2k.h5ad` (2.1 MB), commit to repo
 **Alternatives considered**: .pt file (less portable), .npz (no metadata), regenerate each time
 **Rationale**: h5ad matches the real data format (AnnData), small enough to commit, enables consistent benchmarking
+
+## [2026-03-18] Commit mini Norman dataset to repo
+**Context**: Every new session needs real Perturb-seq data to test with, but downloading 700 MB from Zenodo is slow and flaky
+**Decision**: Create `data/mini_perturb_seq.h5ad` (4.6 MB): 9452 cells x 100 top-variance genes x 10 perturbations from Norman 2019, preprocessed (normalize_total + log1p). Commit to repo.
+**Alternatives considered**: Download each session (slow, unreliable), Git LFS (extra setup), full 500-gene dataset (too large to commit)
+**Rationale**: 4.6 MB is small enough to commit directly. 10 perturbations and 100 genes give 1000 distributions — enough for meaningful training/eval. Any session can immediately use `--adata data/mini_perturb_seq.h5ad`.
