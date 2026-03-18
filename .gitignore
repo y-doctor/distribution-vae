@@ -1,5 +1,6 @@
 # Data
 data/*.h5ad
+!data/synthetic_2k.h5ad
 data/*.h5
 data/*.npz
 data/*.png

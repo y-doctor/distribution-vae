@@ -22,3 +22,15 @@
 **Context**: Multiple agents will develop this simultaneously
 **Decision**: losses.py is pure functions (no state), model.py depends only on losses, data.py is independent, train/eval depend on everything
 **Rationale**: Minimizes coupling. Two agents can work on losses and data simultaneously with zero conflict.
+
+## [2026-03-18] Smooth KS distance implementation
+**Context**: eval.py imported `ks_distance_smooth` from losses.py but it was never implemented
+**Decision**: Implement as logsumexp(temperature * |x-y|) / temperature — a differentiable soft-max approximation of the KS statistic
+**Alternatives considered**: True max (non-differentiable), p-norm approximation
+**Rationale**: logsumexp is a standard smooth-max, temperature=100 gives a close approximation. Simple, differentiable, no extra dependencies.
+
+## [2026-03-18] Save synthetic dataset as h5ad in data/
+**Context**: Re-generating synthetic data every run wastes time and makes results harder to compare
+**Decision**: Generate once, save to `data/synthetic_2k.h5ad` (2.1 MB), commit to repo
+**Alternatives considered**: .pt file (less portable), .npz (no metadata), regenerate each time
+**Rationale**: h5ad matches the real data format (AnnData), small enough to commit, enables consistent benchmarking

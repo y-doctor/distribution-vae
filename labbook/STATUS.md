@@ -1,33 +1,35 @@
 # Project Status
 
-**Last updated**: 2026-03-17 17:00 UTC
-**Updated by**: Session close-out — PR ready for merge
+**Last updated**: 2026-03-18 00:15 UTC
+**Updated by**: First synthetic training run session
 
 ## What works
-- `dist_vae/losses.py` — All 3 loss functions + CombinedDistributionLoss (17 tests pass)
-- `dist_vae/data.py` — SyntheticDistributionDataset, PerturbationDistributionDataset, quantile grid utilities (14 tests pass)
-- `dist_vae/model.py` — DistributionEncoder, DistributionDecoder, DistributionVAE (14 tests pass, 1 CUDA skipped)
-- `dist_vae/train.py` — Trainer with KL warmup, gradient clipping, checkpointing
-- `dist_vae/eval.py` — All evaluation functions and plotting
-- `scripts/` — All 4 CLI scripts implemented
-- End-to-end synthetic training verified (loss decreases correctly)
+- `dist_vae/losses.py` — All 3 loss functions + ks_distance_smooth + CombinedDistributionLoss (47 tests pass)
+- `dist_vae/data.py` — SyntheticDistributionDataset, PerturbationDistributionDataset, quantile grid utilities
+- `dist_vae/model.py` — DistributionEncoder, DistributionDecoder, DistributionVAE
+- `dist_vae/train.py` — Trainer with KL warmup, gradient clipping, checkpointing, training curve plots
+- `dist_vae/eval.py` — All evaluation functions and plotting (reconstructions, latent PCA, interpolations, latent statistics)
+- `scripts/` — All CLI scripts + new generate_synthetic_dataset.py
+- Full synthetic training verified: 100 epochs, loss converges, reconstructions reasonable
+- Evaluation pipeline generates all plots successfully
 - Package installable via `pip install -e ".[dev]"`
-- All 45 tests pass on CPU
+- All 47 tests pass on CPU
+- Saved synthetic dataset at `data/synthetic_2k.h5ad` (2.1 MB)
 
 ## What's broken / blocked
 - Nothing currently broken
-- CUDA test skipped (no GPU in test environment)
-- Real data (Norman et al.) not yet tested (requires download)
+- Partial latent collapse (z_1 near-zero variance) — needs hyperparameter tuning
+- High latent correlations — poor disentanglement with current beta=0.01
+- Sharp distribution features (step functions) poorly reconstructed
 
 ## What's in progress
-- PR #1 open for merge — full implementation of distribution-vae
+- (none)
 
 ## Next priorities
-1. Initial training run with synthetic data (first priority after merge)
+1. Hyperparameter tuning: increase beta, reduce latent_dim, try hidden_dim=256
 2. Download and test with real Perturb-seq data
-3. Tune hyperparameters on real data
-4. Add integration tests for training loop
-5. Profile and optimize for large datasets
+3. Add integration tests for training loop
+4. Profile memory usage on large datasets
 
 ## Environment
 - Python version: 3.11
