@@ -14,6 +14,9 @@ checkpoints_*/
 wandb/
 *.log
 
+# Optuna
+*.db
+
 # Python
 __pycache__/
 *.pyc
