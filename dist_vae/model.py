@@ -133,12 +133,14 @@ class DistributionVAE(nn.Module):
         hidden_dim: int = 128,
         beta: float = 0.01,
         loss_config: dict[str, float] | None = None,
+        free_bits: float = 0.0,
     ) -> None:
         super().__init__()
         self.grid_size = grid_size
         self.latent_dim = latent_dim
         self.beta = beta
         self.current_beta = beta
+        self.free_bits = free_bits
 
         self.encoder = DistributionEncoder(grid_size, latent_dim, hidden_dim)
         self.decoder = DistributionDecoder(grid_size, latent_dim, hidden_dim)
@@ -178,12 +180,25 @@ class DistributionVAE(nn.Module):
         mu: torch.Tensor,
         logvar: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
-        """Compute VAE loss with distributional reconstruction loss and KL divergence."""
+        """Compute VAE loss with distributional reconstruction loss and KL divergence.
+
+        When free_bits > 0, applies per-dimension KL floor: each latent dimension
+        must contribute at least `free_bits` nats before the KL penalty kicks in.
+        This prevents posterior collapse by ensuring the model uses each dimension.
+        """
         # Reconstruction loss
         recon_total, recon_components = self.loss_fn(input_grid, recon)
 
-        # KL divergence: -0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
-        kl = -0.5 * torch.mean(torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1))
+        # Per-dimension KL: 0.5 * (mu^2 + sigma^2 - 1 - log(sigma^2))
+        kl_per_dim = 0.5 * (mu.pow(2) + logvar.exp() - 1 - logvar)  # (batch, latent_dim)
+
+        if self.free_bits > 0:
+            # Free-bits: clamp per-dimension KL to at least free_bits nats
+            # Average over batch first, then clamp, then sum over dims
+            kl_dim_mean = kl_per_dim.mean(dim=0)  # (latent_dim,)
+            kl = torch.sum(torch.clamp(kl_dim_mean, min=self.free_bits))
+        else:
+            kl = kl_per_dim.sum(dim=-1).mean()
 
         total = recon_total + self.current_beta * kl
 
