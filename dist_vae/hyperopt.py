@@ -183,8 +183,27 @@ def create_objective(
 
             trainer = Trainer(model, train_dataset, val_dataset, config)
 
+            # Track Cramer distance separately as the objective metric,
+            # since the combined recon loss can go negative when
+            # distributional KL divergence is included.
+            from dist_vae.losses import cramer_distance
+
+            cramer_history: list[float] = []
+
             def _pruning_callback(epoch: int, metrics: dict) -> None:
-                trial.report(metrics["val_recon"], epoch)
+                # Evaluate Cramer distance on val set regardless of loss config
+                model.eval()
+                cramer_total = 0.0
+                n = 0
+                with torch.no_grad():
+                    for batch in trainer.val_loader:
+                        grids = batch[0].to(device)
+                        recon, _, _, _ = model(grids)
+                        cramer_total += cramer_distance(grids, recon).mean().item()
+                        n += 1
+                val_cramer = cramer_total / max(n, 1)
+                cramer_history.append(val_cramer)
+                trial.report(val_cramer, epoch)
                 if trial.should_prune():
                     raise optuna.TrialPruned()
 
@@ -192,7 +211,7 @@ def create_objective(
                 n_epochs=n_epochs, epoch_callback=_pruning_callback
             )
 
-        return min(history["val_recon"])
+        return min(cramer_history) if cramer_history else min(history["val_recon"])
 
     return objective
 
