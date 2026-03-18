@@ -1,0 +1,29 @@
+[project]
+name = "distribution-vae"
+version = "0.1.0"
+description = "VAE for encoding 1D empirical distributions into compact latent representations"
+requires-python = ">=3.9"
+dependencies = [
+    "torch>=2.0",
+    "anndata>=0.10",
+    "scanpy>=1.9",
+    "scipy>=1.10",
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+    "pyyaml>=6.0",
+    "h5py>=3.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "wandb>=0.15",
+    "umap-learn>=0.5",
+]
+
+[tool.setuptools.packages.find]
+include = ["dist_vae*"]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"

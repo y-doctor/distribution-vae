@@ -1,0 +1,42 @@
+# Data
+data/*.h5ad
+data/*.h5
+data/*.npz
+data/*.png
+
+# Checkpoints
+checkpoints/*.pt
+checkpoints/*.pth
+checkpoints/*.png
+
+# Logs
+wandb/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Eval outputs
+eval_results/
+
+# Download cache artifacts
+https:/
