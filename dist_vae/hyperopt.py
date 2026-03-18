@@ -48,12 +48,16 @@ def default_search_space() -> dict[str, dict]:
     """
     return {
         "model.latent_dim": {"type": "categorical", "choices": [16, 32, 64]},
-        "model.hidden_dim": {"type": "categorical", "choices": [64, 128, 256]},
-        "model.beta": {"type": "log_float", "low": 1e-4, "high": 0.1},
-        "model.beta_warmup_epochs": {"type": "int", "low": 0, "high": 20},
+        "model.hidden_dim": {"type": "categorical", "choices": [64, 128, 256, 512]},
+        "model.beta": {"type": "log_float", "low": 1e-5, "high": 0.1},
+        "model.beta_warmup_epochs": {"type": "int", "low": 0, "high": 30},
+        "model.free_bits": {"type": "categorical", "choices": [0.0, 0.5, 1.0, 2.0]},
         "training.lr": {"type": "log_float", "low": 1e-5, "high": 1e-2},
         "training.weight_decay": {"type": "log_float", "low": 1e-6, "high": 1e-2},
-        "training.batch_size": {"type": "categorical", "choices": [64, 128, 256, 512]},
+        "training.batch_size": {"type": "categorical", "choices": [32, 64, 128, 256]},
+        # W1 is ~10x larger than Cramer in magnitude, so search on lower scale
+        "loss.cramer": {"type": "float", "low": 0.0, "high": 1.0},
+        "loss.wasserstein1": {"type": "float", "low": 0.0, "high": 0.1},
     }
 
 
@@ -171,6 +175,7 @@ def create_objective(
                 latent_dim=model_cfg.get("latent_dim", 32),
                 hidden_dim=model_cfg.get("hidden_dim", 128),
                 beta=model_cfg.get("beta", 0.01),
+                free_bits=model_cfg.get("free_bits", 0.0),
                 loss_config=loss_weights,
             ).to(device)
 
