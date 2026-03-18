@@ -3,8 +3,7 @@
 ## TODO
 - [ ] Run hyperopt on synthetic data end-to-end — S
 - [ ] End-to-end test: Norman et al. full dataset → train → encode → eval — M
-- [ ] Tune hyperparameters on real data using hyperopt module — M
-- [ ] Hyperparameter sweep: beta, latent_dim, hidden_dim, free_bits — M
+- [ ] Train full 500 epochs with best hyperopt config and evaluate — M
 - [ ] Investigate log-transforming quantile grids before model input — S
 - [ ] Try W1 loss for better tail differentiation — S
 - [ ] Investigate total correlation penalty for better disentanglement — S
@@ -16,6 +15,9 @@
 (none)
 
 ## DONE
+- [x] **100-trial hyperopt on mini Norman** — completed 2026-03-18 06:30
+  - Best: latent_dim=16, hidden_dim=256, beta=0.0017, lr=0.00125, batch_size=64, Cramer-only
+  - Saved to configs/best_hyperopt.yaml
 - [x] **Fix posterior collapse on real data** — completed 2026-03-18 02:15
   - beta=0.0001 + latent_dim=16 is best: Cramer=0.0092, all 16 dims active, mean std=0.72
   - Implemented free-bits as alternative approach (works but less effective than lowering beta)
