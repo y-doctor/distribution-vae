@@ -1,7 +1,7 @@
 # Project Status
 
-**Last updated**: 2026-03-18 00:30 UTC
-**Updated by**: Synthetic training + real data session
+**Last updated**: 2026-03-18 01:00 UTC
+**Updated by**: Session close-out — real data training + posterior collapse diagnosis
 
 ## What works
 - `dist_vae/losses.py` — All 3 loss functions + ks_distance_smooth + CombinedDistributionLoss (47 tests pass)
@@ -18,18 +18,15 @@
 - Saved mini Norman et al. dataset at `data/mini_perturb_seq.h5ad` (4.6 MB) — 9452 cells x 100 genes x 10 perturbations
 
 ## What's broken / blocked
-- Nothing currently broken
-- Partial latent collapse (z_1 near-zero variance) — needs hyperparameter tuning
-- High latent correlations — poor disentanglement with current beta=0.01
-- Sharp distribution features (step functions) poorly reconstructed
+- **Posterior collapse on real data** — the critical issue to fix next
+  - 1000-epoch run on mini Norman: Cramer=0.020 but KL=2.0, latent range [-0.1, 0.04]
+  - Model learns a single zero-inflated template, latent space nearly unused
+  - beta=0.01 is too aggressive for 1000 distributions with 32 latent dims
+- Partial latent collapse on synthetic data too (z_1 near-zero variance)
+- High latent correlations — poor disentanglement
 
 ## What's in progress
 - (none)
-
-## Key finding: posterior collapse on real data
-- 1000-epoch run on mini Norman data achieves Cramer=0.020 but KL=2.0, latent range [-0.1, 0.04]
-- Model learns a single zero-inflated template, latent space is nearly unused
-- beta=0.01 is too aggressive — need to reduce to 0.001 or use free-bits
 
 ## What's in the repo (data files)
 - `data/synthetic_2k.h5ad` — 2000 synthetic distributions (2.1 MB, committed)
@@ -37,12 +34,13 @@
 - `data/sample_perturb_seq.h5ad` — Full preprocessed Norman 2019: 111k cells x 500 HVGs (gitignored, regenerate via download script)
 
 ## Next priorities
-1. Train on mini real data: `python scripts/train.py --config configs/default.yaml --adata data/mini_perturb_seq.h5ad`
-2. Hyperparameter tuning: increase beta, reduce latent_dim, try hidden_dim=256
-3. Add integration tests for training loop
-4. Profile memory usage on large datasets
+1. **Fix posterior collapse** — try beta=0.001 or 0.0001, reduce latent_dim to 8-16, or implement free-bits
+2. Hyperparameter sweep: systematic search over beta, latent_dim, hidden_dim
+3. Consider log-transforming quantile grids or using W1 loss for better tail differentiation
+4. Add integration tests for training loop
+5. Profile memory usage on large datasets
 
 ## Environment
 - Python version: 3.11
 - PyTorch version: 2.10.0
-- Last tested on: CPU, Linux
+- Last tested on: CPU, macOS Darwin 24.6.0
