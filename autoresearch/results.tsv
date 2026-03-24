@@ -17,3 +17,4 @@ ac99692	-0.043378	2.391422	12/16	1904	97985	discard	softmax+cumsum decoder monot
 15fc9b8	0.002138	700.559082	16/16	1718	97985	discard	grad_clip=0.5
 e2e734b	-0.000240	608.237122	16/16	1819	97985	keep	Eval every 5 epochs
 5e97a87	-0.000034	1741.494507	16/16	1715	97985	keep	Eval every epoch
+f59dc22	-0.000145	0.142051	12/16	3180	97985	keep	KL + 0.1*W1 loss (fixes scale collapse)
