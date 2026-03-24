@@ -13,3 +13,4 @@ ef4dd46	-0.004378	319.871979	16/16	1738	97985	discard	Best checkpoint eval
 ac99692	-0.043378	2.391422	12/16	1904	97985	discard	softmax+cumsum decoder monotonicity
 772277b	-0.002438	3433.383057	14/16	1947	97985	discard	Squared KL divergence loss
 59d9c9b	-0.009276	770.808533	11/16	1716	97985	discard	beta=0.001
+7c9c3bd	-0.000742	505.189880	16/16	1856	97985	keep	Eval every 10 epochs + best checkpoint selection
