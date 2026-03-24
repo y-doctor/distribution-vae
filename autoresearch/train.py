@@ -190,18 +190,9 @@ class DistributionVAE(nn.Module):
         mu: torch.Tensor,
         logvar: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
-        # Reconstruction loss: KL divergence on quantile spacings (for density shape)
-        eps = 1e-8
-        dx = torch.diff(input_grid, dim=-1).clamp(min=eps)
-        dy = torch.diff(recon, dim=-1).clamp(min=eps)
-        log_ratio = torch.log(dy / dx)
-        kl_recon = torch.mean(log_ratio, dim=-1).abs().mean()
-
-        # W1 distance to anchor absolute scale (prevents scale collapse)
-        w1 = wasserstein1_distance(input_grid, recon).mean()
-
-        # Combined: KL for shape + W1 for scale
-        recon_loss = kl_recon + 0.1 * w1
+        # Reconstruction loss: Cramer distance (MSE between quantile grids)
+        # Directly penalizes pointwise reconstruction error
+        recon_loss = cramer_distance(input_grid, recon).mean()
 
         # KL divergence
         kl_per_dim = 0.5 * (mu.pow(2) + logvar.exp() - 1 - logvar)
