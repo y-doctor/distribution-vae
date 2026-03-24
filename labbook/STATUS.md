@@ -1,7 +1,7 @@
 # Project Status
 
-**Last updated**: 2026-03-18 02:15 UTC
-**Updated by**: Session — fix posterior collapse on real data
+**Last updated**: 2026-03-24 00:00 UTC
+**Updated by**: Session — add autoresearch framework
 
 ## What works
 - `dist_vae/losses.py` — All loss functions + CombinedDistributionLoss (47 tests pass)
@@ -20,7 +20,7 @@
 - Only tested on mini Norman (100 genes, 10 perturbations) — needs full-scale validation
 
 ## What's in progress
-- Nothing — session ending
+- Autoresearch framework added — ready for autonomous experimentation
 
 ## Next priorities
 1. Test best settings on full 500-gene Norman dataset

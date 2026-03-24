@@ -13,7 +13,11 @@
 - [ ] Test best settings (beta=0.0001, d=16) on full 500-gene Norman dataset — M
 
 ## IN PROGRESS
-(none)
+- [ ] Run autoresearch agent overnight — M — started 2026-03-24
+
+## RECENTLY ADDED
+- [ ] Run autoresearch agent on GPU for extended experiment session — M
+- [ ] Analyze autoresearch results and integrate best findings into main library — M
 
 ## DONE
 - [x] **Fix posterior collapse on real data** — completed 2026-03-18 02:15
