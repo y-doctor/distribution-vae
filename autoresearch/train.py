@@ -243,9 +243,11 @@ def train() -> None:
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
 
     # ---- Training loop (time-budgeted) ----
+    import copy
     start_time = time.time()
     epoch = 0
     best_val_metric = float("inf")
+    best_state = None
 
     while True:
         elapsed = time.time() - start_time
@@ -276,8 +278,8 @@ def train() -> None:
 
         avg_loss = epoch_loss / max(n_batches, 1)
 
-        # Periodic logging
-        if epoch % 50 == 0 or epoch < 5:
+        # Periodic logging (every 10 epochs for better checkpointing)
+        if epoch % 10 == 0 or epoch < 5:
             metrics = evaluate(model, val_loader, device)
             vkl = metrics["val_kl_divergence"]
             ad = metrics["active_dims"]
@@ -289,13 +291,17 @@ def train() -> None:
             )
             if abs(vkl) < best_val_metric:
                 best_val_metric = abs(vkl)
+                best_state = copy.deepcopy(model.state_dict())
 
         epoch += 1
 
-    # ---- Final evaluation (always printed, parsed by agent) ----
+    # ---- Final evaluation using best checkpoint ----
     total_time = time.time() - start_time
     print(f"\nTraining complete: {epoch} epochs in {total_time:.1f}s")
+    print(f"Best |val_kl| during training: {best_val_metric:.6f}")
 
+    if best_state is not None:
+        model.load_state_dict(best_state)
     metrics = evaluate(model, val_loader, device)
     print("\n--- RESULTS ---")
     print_metrics(metrics)
