@@ -45,15 +45,16 @@ from prepare import (
 # ============================================================================
 
 LATENT_DIM = 16
-HIDDEN_DIM = 128
-BETA = 0.0001            # KL weight
-BETA_WARMUP_EPOCHS = 20  # Linear warmup from 0 to BETA
+HIDDEN_DIM = 256
+BETA = 0.00005           # KL weight (lower to let recon dominate)
+BETA_WARMUP_EPOCHS = 30  # Linear warmup from 0 to BETA
 FREE_BITS = 0.0          # Per-dim KL floor (0 = disabled)
-LR = 1e-3
+LR = 5e-4
 WEIGHT_DECAY = 1e-4
 GRAD_CLIP = 1.0
 BATCH_SIZE = 256
 SEED = 42
+DENSITY_WEIGHT = 0.1     # Weight for density matching loss (targets KL metric)
 
 # ============================================================================
 # LOSS FUNCTIONS — feel free to modify or add new ones
@@ -98,48 +99,78 @@ def density_matching_loss(
 
 
 class DistributionEncoder(nn.Module):
-    """1D CNN encoder: quantile grid -> (mu, logvar)."""
+    """1D CNN encoder with residual blocks: quantile grid -> (mu, logvar)."""
 
     def __init__(self, grid_size: int, latent_dim: int, hidden_dim: int) -> None:
         super().__init__()
-        self.convs = nn.Sequential(
-            nn.Conv1d(1, hidden_dim // 4, kernel_size=7, stride=2, padding=3),
-            nn.GELU(),
-            nn.Conv1d(hidden_dim // 4, hidden_dim // 2, kernel_size=5, stride=2, padding=2),
-            nn.GELU(),
-            nn.Conv1d(hidden_dim // 2, hidden_dim, kernel_size=3, stride=2, padding=1),
-            nn.GELU(),
-            nn.AdaptiveAvgPool1d(1),
-        )
+        c1, c2, c3 = hidden_dim // 4, hidden_dim // 2, hidden_dim
+
+        # Downsample path
+        self.conv1 = nn.Conv1d(1, c1, kernel_size=7, stride=2, padding=3)
+        self.bn1 = nn.BatchNorm1d(c1)
+        self.conv2 = nn.Conv1d(c1, c2, kernel_size=5, stride=2, padding=2)
+        self.bn2 = nn.BatchNorm1d(c2)
+        self.conv3 = nn.Conv1d(c2, c3, kernel_size=3, stride=2, padding=1)
+        self.bn3 = nn.BatchNorm1d(c3)
+
+        # Residual block at full channel width
+        self.res_conv1 = nn.Conv1d(c3, c3, kernel_size=3, padding=1)
+        self.res_bn1 = nn.BatchNorm1d(c3)
+        self.res_conv2 = nn.Conv1d(c3, c3, kernel_size=3, padding=1)
+        self.res_bn2 = nn.BatchNorm1d(c3)
+
+        self.pool = nn.AdaptiveAvgPool1d(1)
         self.fc_mu = nn.Linear(hidden_dim, latent_dim)
         self.fc_logvar = nn.Linear(hidden_dim, latent_dim)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        h = self.convs(x.unsqueeze(1)).squeeze(-1)
+        h = F.gelu(self.bn1(self.conv1(x.unsqueeze(1))))
+        h = F.gelu(self.bn2(self.conv2(h)))
+        h = F.gelu(self.bn3(self.conv3(h)))
+        # Residual block
+        r = F.gelu(self.res_bn1(self.res_conv1(h)))
+        h = h + self.res_bn2(self.res_conv2(r))
+        h = F.gelu(h)
+        h = self.pool(h).squeeze(-1)
         return self.fc_mu(h), self.fc_logvar(h)
 
 
 class DistributionDecoder(nn.Module):
-    """1D CNN decoder with monotonicity enforcement: z -> quantile grid."""
+    """1D CNN decoder with residual block + monotonicity enforcement: z -> quantile grid."""
 
     def __init__(self, grid_size: int, latent_dim: int, hidden_dim: int) -> None:
         super().__init__()
         self.grid_size = grid_size
         self.hidden_dim = hidden_dim
         self.initial_length = 8
+        c1, c2 = hidden_dim // 2, hidden_dim // 4
 
         self.fc = nn.Linear(latent_dim, hidden_dim * self.initial_length)
-        self.deconvs = nn.Sequential(
-            nn.ConvTranspose1d(hidden_dim, hidden_dim // 2, kernel_size=4, stride=2, padding=1),
-            nn.GELU(),
-            nn.ConvTranspose1d(hidden_dim // 2, hidden_dim // 4, kernel_size=4, stride=2, padding=1),
-            nn.GELU(),
-            nn.ConvTranspose1d(hidden_dim // 4, 1, kernel_size=4, stride=2, padding=1),
-        )
+        self.bn_fc = nn.BatchNorm1d(hidden_dim)
+
+        self.deconv1 = nn.ConvTranspose1d(hidden_dim, c1, kernel_size=4, stride=2, padding=1)
+        self.bn1 = nn.BatchNorm1d(c1)
+        self.deconv2 = nn.ConvTranspose1d(c1, c2, kernel_size=4, stride=2, padding=1)
+        self.bn2 = nn.BatchNorm1d(c2)
+
+        # Residual refinement at c2 channels
+        self.res_conv1 = nn.Conv1d(c2, c2, kernel_size=3, padding=1)
+        self.res_bn1 = nn.BatchNorm1d(c2)
+        self.res_conv2 = nn.Conv1d(c2, c2, kernel_size=3, padding=1)
+        self.res_bn2 = nn.BatchNorm1d(c2)
+
+        self.deconv3 = nn.ConvTranspose1d(c2, 1, kernel_size=4, stride=2, padding=1)
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         h = self.fc(z).view(-1, self.hidden_dim, self.initial_length)
-        h = self.deconvs(h).squeeze(1)
+        h = F.gelu(self.bn_fc(h))
+        h = F.gelu(self.bn1(self.deconv1(h)))
+        h = F.gelu(self.bn2(self.deconv2(h)))
+        # Residual block
+        r = F.gelu(self.res_bn1(self.res_conv1(h)))
+        h = h + self.res_bn2(self.res_conv2(r))
+        h = F.gelu(h)
+        h = self.deconv3(h).squeeze(1)
         if h.shape[-1] != self.grid_size:
             h = F.interpolate(
                 h.unsqueeze(1), size=self.grid_size, mode="linear", align_corners=True
@@ -190,9 +221,10 @@ class DistributionVAE(nn.Module):
         mu: torch.Tensor,
         logvar: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
-        # Reconstruction loss: Cramer distance (MSE between quantile grids)
-        # Directly penalizes pointwise reconstruction error
-        recon_loss = cramer_distance(input_grid, recon).mean()
+        # Reconstruction loss: Cramer (pointwise) + density matching (targets KL metric)
+        cramer = cramer_distance(input_grid, recon).mean()
+        density = density_matching_loss(input_grid, recon).mean()
+        recon_loss = cramer + DENSITY_WEIGHT * density
 
         # KL divergence
         kl_per_dim = 0.5 * (mu.pow(2) + logvar.exp() - 1 - logvar)
@@ -235,8 +267,9 @@ def train() -> None:
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Parameters: {n_params:,}")
 
-    # Optimizer
+    # Optimizer + cosine annealing scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=2500, eta_min=1e-5)
 
     # ---- Training loop (time-budgeted) ----
     import copy
@@ -272,10 +305,11 @@ def train() -> None:
             epoch_loss += losses["total"].item()
             n_batches += 1
 
+        scheduler.step()
         avg_loss = epoch_loss / max(n_batches, 1)
 
-        # Eval every epoch for optimal checkpointing
-        if True:
+        # Eval every 5 epochs to save time for more training
+        if epoch % 5 == 0 or elapsed > TIME_BUDGET - 15:
             metrics = evaluate(model, val_loader, device)
             vkl = metrics["val_kl_divergence"]
             ad = metrics["active_dims"]
