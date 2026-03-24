@@ -1,3 +1,4 @@
 commit	val_kl_divergence	val_w1	active_dims	epochs	n_params	status	description
 83c7a88	2.095042	0.027141	9/16	2050	97985	baseline	Baseline run with default settings
 32c99d5	3.357176	0.021876	16/16	1774	122561	discard	LayerNorm + free_bits=0.5 + cosine LR
+2871055	0.002124	1136.815063	15/16	1838	97985	baseline	New baseline: KL divergence as training loss
