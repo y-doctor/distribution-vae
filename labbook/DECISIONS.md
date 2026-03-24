@@ -61,3 +61,9 @@
 **Decision**: Implement per-dimension KL floor (free-bits): each latent dim must contribute >= `free_bits` nats before KL penalty applies. Default 0.0 preserves existing behavior.
 **Alternatives considered**: Cyclical annealing, delta-VAE, skip connections, aggressive decoder
 **Rationale**: Free-bits is simple, well-understood (Kingma et al. 2016), and compatible with any beta. Doubles KL usage at beta=0.001 (8.0 -> 19.1). Good fallback when beta can't be lowered further.
+
+## [2026-03-24] Autoresearch framework (autonomous AI experimentation)
+**Context**: Manual hyperparameter/architecture tuning is slow. Want autonomous AI agent to experiment 24/7.
+**Decision**: Create `autoresearch/` directory following Karpathy's autoresearch pattern: single mutable file (train.py), fixed evaluation infrastructure (prepare.py), agent instructions (program.md), git-based experiment tracking.
+**Alternatives considered**: Extend existing hyperopt module (too constrained — only tunes hyperparameters, not architecture), custom experiment framework (over-engineering)
+**Rationale**: The autoresearch pattern is simple and proven. Single-file modification keeps diffs reviewable. Fixed time budget (5 min) makes experiments comparable. Git commits as experiment tracker — keep on improvement, reset on failure. Agent can modify anything: architecture, losses, optimizer, training loop.
