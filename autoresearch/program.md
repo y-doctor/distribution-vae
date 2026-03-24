@@ -12,7 +12,7 @@ You are an autonomous AI research agent. Your job is to improve a Variational Au
 4. Create a new git branch: `git checkout -b autoresearch/<your_tag>` where `<your_tag>` is a short identifier (e.g., `autoresearch/run-001`)
 5. Initialize the results file:
    ```
-   echo "commit\tval_cramer\tval_w1\tactive_dims\tepochs\tn_params\tstatus\tdescription" > results.tsv
+   echo "commit\tval_kl_divergence\tval_w1\tactive_dims\tepochs\tn_params\tstatus\tdescription" > results.tsv
    ```
 6. Run the baseline: `python autoresearch/train.py > run.log 2>&1`
 7. Parse the output for the metrics (see "Parsing output" below)
@@ -26,11 +26,11 @@ while True:
     2. Edit train.py
     3. Git commit the change: git add autoresearch/train.py && git commit -m "<brief description>"
     4. Run: python autoresearch/train.py > run.log 2>&1   (timeout: 10 minutes)
-    5. Parse output for val_cramer and active_dims
+    5. Parse output for val_kl_divergence and active_dims
     6. Decision:
-       - If val_cramer IMPROVED (decreased) AND active_dims > 0: KEEP
+       - If |val_kl_divergence| IMPROVED (decreased) AND active_dims > 0: KEEP
          → Record in results.tsv with status=keep
-       - If val_cramer got WORSE or EQUAL: DISCARD
+       - If |val_kl_divergence| got WORSE or EQUAL: DISCARD
          → git reset --hard HEAD~1
          → Record in results.tsv with status=discard
        - If CRASHED: read the error, attempt a fix or discard
@@ -59,38 +59,38 @@ Only `autoresearch/train.py`. Specifically:
 
 After each run, grep the output for:
 ```
-val_cramer=X.XXXXXX     ← PRIMARY METRIC (lower is better)
+val_kl_divergence=X.XXXXXX     ← PRIMARY METRIC (lower absolute value is better)
 val_w1=X.XXXXXX         ← secondary (lower is better)
 active_dims=N/M          ← latent utilization (MUST stay > 0, ideally N == M)
 epochs=N                 ← how many epochs fit in the time budget
 n_params=N               ← model size
 ```
 
-The **primary metric is val_cramer**. A change is KEPT only if val_cramer strictly decreases.
+The **primary metric is val_kl_divergence**. A change is KEPT only if |val_kl_divergence| strictly decreases (closer to 0). KL divergence can be negative due to the quantile-based estimation, so always compare absolute values.
 
-**IMPORTANT**: If active_dims drops to 0, that's posterior collapse — always discard, even if val_cramer looks good.
+**IMPORTANT**: If active_dims drops to 0, that's posterior collapse — always discard, even if val_kl_divergence looks good.
 
 ## Recording results
 
 Append to `results.tsv` (tab-separated):
 ```
-<commit_hash>\t<val_cramer>\t<val_w1>\t<active_dims>\t<epochs>\t<n_params>\t<status>\t<description>
+<commit_hash>\t<val_kl_divergence>\t<val_w1>\t<active_dims>\t<epochs>\t<n_params>\t<status>\t<description>
 ```
 
 Example:
 ```
-a1b2c3d\t0.009200\t0.051000\t16/16\t487\t123456\tbaseline\tBaseline run with default settings
-e4f5g6h\t0.008500\t0.048000\t16/16\t487\t123456\tkeep\tIncrease hidden_dim to 192
-i7j8k9l\t0.010100\t0.053000\t12/16\t487\t123456\tdiscard\tTry W1 loss instead of Cramer
+a1b2c3d\t0.042000\t0.051000\t16/16\t487\t123456\tbaseline\tBaseline run with default settings
+e4f5g6h\t0.031000\t0.048000\t16/16\t487\t123456\tkeep\tIncrease hidden_dim to 192
+i7j8k9l\t0.058000\t0.053000\t12/16\t487\t123456\tdiscard\tTry W1 loss instead of Cramer
 ```
 
 ## The metric
 
-**val_cramer** = mean squared error between input and reconstructed quantile grids on the validation set. It directly measures how well the VAE reconstructs the shape of 1D distributions.
+**val_kl_divergence** = KL divergence between the original and reconstructed distributions, estimated from their quantile grids. It measures how faithfully the VAE preserves the distributional shape — including density ratios, not just location.
 
-Lower val_cramer = better reconstruction quality.
+For quantile functions Q, the density is f(Q(p)) ≈ dp / dQ. The KL is computed as mean(log(delta_recon / delta_input)) over quantile spacings.
 
-The current best is approximately **0.0092** (achieved with beta=0.0001, latent_dim=16, hidden_dim=128, Cramer loss, 500 epochs on mini Norman data).
+Lower |val_kl_divergence| = better reconstruction (0 = perfect). The value can be negative.
 
 ## Research ideas to try (starting suggestions)
 
@@ -150,9 +150,9 @@ If `train.py` crashes:
 ## When to STOP (never, but here are soft goals)
 
 You can note milestones:
-- val_cramer < 0.008: Good improvement over baseline
-- val_cramer < 0.006: Excellent — major advance
-- val_cramer < 0.004: Outstanding — diminishing returns territory
+- |val_kl_divergence| < 0.05: Good reconstruction
+- |val_kl_divergence| < 0.01: Excellent — near-perfect density matching
+- |val_kl_divergence| < 0.005: Outstanding — diminishing returns territory
 - active_dims = M/M consistently: Healthy latent space
 
 Even after hitting these milestones, KEEP GOING. There's always more to find.

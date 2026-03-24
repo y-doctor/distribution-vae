@@ -4,9 +4,10 @@ This is a self-contained training script for the Distribution VAE.
 The AI agent experiments by modifying the model architecture, loss functions,
 hyperparameters, optimizer, scheduler, and training loop in this file.
 
-The evaluation metric is val_cramer (lower is better) — computed by the
-fixed evaluate() function in prepare.py. The agent's goal is to minimize
-val_cramer while keeping all latent dimensions active (no posterior collapse).
+The evaluation metric is val_kl_divergence (lower absolute value is better) —
+the KL divergence between original and reconstructed distributions, computed by
+the fixed evaluate() function in prepare.py. The agent's goal is to minimize
+|val_kl_divergence| while keeping all latent dimensions active (no posterior collapse).
 
 Usage:
     python autoresearch/train.py > run.log 2>&1
@@ -225,7 +226,7 @@ def train() -> None:
     # ---- Training loop (time-budgeted) ----
     start_time = time.time()
     epoch = 0
-    best_val_cramer = float("inf")
+    best_val_metric = float("inf")
 
     while True:
         elapsed = time.time() - start_time
@@ -259,16 +260,16 @@ def train() -> None:
         # Periodic logging
         if epoch % 50 == 0 or epoch < 5:
             metrics = evaluate(model, val_loader, device)
-            vc = metrics["val_cramer"]
+            vkl = metrics["val_kl_divergence"]
             ad = metrics["active_dims"]
             td = metrics["total_dims"]
             print(
                 f"Epoch {epoch:4d} | train_loss={avg_loss:.6f} | "
-                f"val_cramer={vc:.6f} | active_dims={ad}/{td} | "
+                f"val_kl_divergence={vkl:.6f} | active_dims={ad}/{td} | "
                 f"elapsed={elapsed:.0f}s"
             )
-            if vc < best_val_cramer:
-                best_val_cramer = vc
+            if abs(vkl) < best_val_metric:
+                best_val_metric = abs(vkl)
 
         epoch += 1
 

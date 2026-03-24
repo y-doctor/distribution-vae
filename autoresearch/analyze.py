@@ -21,7 +21,7 @@ def load_results(path: str = "results.tsv") -> list[dict]:
                 continue
             row = dict(zip(header, vals))
             # Parse numeric fields
-            for key in ["val_cramer", "val_w1"]:
+            for key in ["val_kl_divergence", "val_w1"]:
                 if key in row:
                     try:
                         row[key] = float(row[key])
@@ -57,33 +57,33 @@ def print_summary(rows: list[dict]) -> None:
     print()
 
     # Baseline and best
-    baseline_rows = [r for r in rows if r.get("status") == "baseline" and r.get("val_cramer") is not None]
-    kept_rows = [r for r in rows if r.get("status") == "keep" and r.get("val_cramer") is not None]
-    all_valid = [r for r in rows if r.get("val_cramer") is not None]
+    baseline_rows = [r for r in rows if r.get("status") == "baseline" and r.get("val_kl_divergence") is not None]
+    kept_rows = [r for r in rows if r.get("status") == "keep" and r.get("val_kl_divergence") is not None]
+    all_valid = [r for r in rows if r.get("val_kl_divergence") is not None]
 
     if baseline_rows:
-        baseline_cramer = baseline_rows[0]["val_cramer"]
-        print(f"Baseline val_cramer: {baseline_cramer:.6f}")
+        baseline_val = baseline_rows[0]["val_kl_divergence"]
+        print(f"Baseline val_kl_divergence: {baseline_val:.6f} (|{abs(baseline_val):.6f}|)")
 
     if all_valid:
-        best = min(all_valid, key=lambda r: r["val_cramer"])
-        print(f"Best val_cramer:     {best['val_cramer']:.6f}  ({best.get('description', 'N/A')})")
+        best = min(all_valid, key=lambda r: abs(r["val_kl_divergence"]))
+        print(f"Best val_kl_divergence:     {best['val_kl_divergence']:.6f} (|{abs(best['val_kl_divergence']):.6f}|)  ({best.get('description', 'N/A')})")
 
         if baseline_rows:
-            improvement = baseline_cramer - best["val_cramer"]
-            pct = improvement / baseline_cramer * 100
+            improvement = abs(baseline_val) - abs(best["val_kl_divergence"])
+            pct = improvement / abs(baseline_val) * 100 if abs(baseline_val) > 0 else 0
             print(f"Total improvement:   {improvement:.6f}  ({pct:.1f}%)")
 
     print()
 
-    # Top experiments (sorted by val_cramer)
+    # Top experiments (sorted by val_kl_divergence)
     if kept_rows:
         print("TOP KEPT EXPERIMENTS (best first):")
         print("-" * 70)
-        kept_sorted = sorted(kept_rows, key=lambda r: r["val_cramer"])
+        kept_sorted = sorted(kept_rows, key=lambda r: abs(r["val_kl_divergence"]))
         for i, r in enumerate(kept_sorted[:15]):
             print(
-                f"  {i+1:2d}. val_cramer={r['val_cramer']:.6f} | "
+                f"  {i+1:2d}. val_kl_divergence={r['val_kl_divergence']:.6f} | "
                 f"active_dims={r.get('active_dims', '?')} | "
                 f"{r.get('description', 'N/A')}"
             )
@@ -95,10 +95,10 @@ def print_summary(rows: list[dict]) -> None:
         print("-" * 70)
         running_min = float("inf")
         for i, r in enumerate(all_valid):
-            if r["val_cramer"] < running_min:
-                running_min = r["val_cramer"]
+            if abs(r["val_kl_divergence"]) < running_min:
+                running_min = abs(r["val_kl_divergence"])
                 print(
-                    f"  Experiment {i+1}: val_cramer={r['val_cramer']:.6f} ← NEW BEST "
+                    f"  Experiment {i+1}: val_kl_divergence={r['val_kl_divergence']:.6f} ← NEW BEST "
                     f"({r.get('description', 'N/A')})"
                 )
 
@@ -114,13 +114,13 @@ def plot_progress(rows: list[dict], save_path: str = "progress.png") -> None:
         print("matplotlib not available, skipping plot")
         return
 
-    valid = [r for r in rows if r.get("val_cramer") is not None]
+    valid = [r for r in rows if r.get("val_kl_divergence") is not None]
     if len(valid) < 2:
         print("Not enough data points for a plot")
         return
 
     x = list(range(1, len(valid) + 1))
-    y = [r["val_cramer"] for r in valid]
+    y = [abs(r["val_kl_divergence"]) for r in valid]
     statuses = [r.get("status", "unknown") for r in valid]
 
     # Running minimum
@@ -148,7 +148,7 @@ def plot_progress(rows: list[dict], save_path: str = "progress.png") -> None:
     ax.plot(x, running_min, color="blue", linewidth=2, alpha=0.8, label="Running best")
 
     ax.set_xlabel("Experiment #")
-    ax.set_ylabel("val_cramer")
+    ax.set_ylabel("|val_kl_divergence|")
     ax.set_title("Autoresearch: Distribution VAE Experiments")
     ax.legend()
     ax.grid(True, alpha=0.3)
