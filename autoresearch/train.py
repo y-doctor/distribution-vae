@@ -78,6 +78,20 @@ def ks_distance_smooth(
     return torch.logsumexp(temperature * abs_diff, dim=-1) / temperature
 
 
+def density_matching_loss(
+    sorted_x: torch.Tensor, sorted_y: torch.Tensor, eps: float = 1e-8
+) -> torch.Tensor:
+    """Loss on quantile spacing ratios — directly targets the KL divergence eval metric.
+
+    KL(P||Q) ≈ mean(log(delta_recon / delta_input)), so we minimize
+    the squared log-ratio of quantile spacings.
+    """
+    dx = torch.diff(sorted_x, dim=-1).clamp(min=eps)
+    dy = torch.diff(sorted_y, dim=-1).clamp(min=eps)
+    log_ratio = torch.log(dy / dx)
+    return torch.mean(log_ratio ** 2, dim=-1)
+
+
 # ============================================================================
 # MODEL ARCHITECTURE — feel free to modify
 # ============================================================================
@@ -176,8 +190,10 @@ class DistributionVAE(nn.Module):
         mu: torch.Tensor,
         logvar: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
-        # Reconstruction loss (Cramer distance)
-        recon_loss = cramer_distance(input_grid, recon).mean()
+        # Reconstruction loss (Cramer distance + density matching)
+        cramer_loss = cramer_distance(input_grid, recon).mean()
+        density_loss = density_matching_loss(input_grid, recon).mean()
+        recon_loss = cramer_loss + 0.1 * density_loss
 
         # KL divergence
         kl_per_dim = 0.5 * (mu.pow(2) + logvar.exp() - 1 - logvar)
