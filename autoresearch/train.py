@@ -13,8 +13,8 @@ Usage:
     python autoresearch/train.py > run.log 2>&1
 
 Output (parsed by the agent):
-    val_cramer=X.XXXXXX    (primary metric, lower is better)
-    active_dims=N/M        (latent utilization, higher is better)
+    val_kl_divergence=X.XXXXXX    (primary metric, lower absolute value is better)
+    active_dims=N/M               (latent utilization, higher is better)
 """
 
 from __future__ import annotations
@@ -190,10 +190,13 @@ class DistributionVAE(nn.Module):
         mu: torch.Tensor,
         logvar: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
-        # Reconstruction loss (Cramer distance + density matching)
-        cramer_loss = cramer_distance(input_grid, recon).mean()
-        density_loss = density_matching_loss(input_grid, recon).mean()
-        recon_loss = cramer_loss + 0.1 * density_loss
+        # Reconstruction loss: KL divergence on quantile spacings
+        # Matches the val_kl_divergence eval metric in prepare.py
+        eps = 1e-8
+        dx = torch.diff(input_grid, dim=-1).clamp(min=eps)
+        dy = torch.diff(recon, dim=-1).clamp(min=eps)
+        log_ratio = torch.log(dy / dx)
+        recon_loss = torch.mean(log_ratio, dim=-1).abs().mean()
 
         # KL divergence
         kl_per_dim = 0.5 * (mu.pow(2) + logvar.exp() - 1 - logvar)
