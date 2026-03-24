@@ -278,8 +278,8 @@ def train() -> None:
 
         avg_loss = epoch_loss / max(n_batches, 1)
 
-        # Periodic logging (every 5 epochs for aggressive checkpointing)
-        if epoch % 5 == 0 or epoch < 5:
+        # Eval every epoch for optimal checkpointing
+        if True:
             metrics = evaluate(model, val_loader, device)
             vkl = metrics["val_kl_divergence"]
             ad = metrics["active_dims"]
