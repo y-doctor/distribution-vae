@@ -2,3 +2,14 @@ commit	val_kl_divergence	val_w1	active_dims	epochs	n_params	status	description
 83c7a88	2.095042	0.027141	9/16	2050	97985	baseline	Baseline run with default settings
 32c99d5	3.357176	0.021876	16/16	1774	122561	discard	LayerNorm + free_bits=0.5 + cosine LR
 2871055	0.002124	1136.815063	15/16	1838	97985	baseline	New baseline: KL divergence as training loss
+5889c46	0.081001	0.245094	14/16	1982	97985	discard	KL + 0.01*Cramer combined loss
+22db070	-0.056772	5881.743164	16/16	1091	203793	discard	hidden_dim=192
+24de3ba	0.072746	9.812992	15/16	1770	97985	discard	LR=3e-4
+c123314	0.015497	7902.780762	16/16	1666	103137	discard	Deeper encoder (extra conv layer)
+9cba449	0.069839	5953.491699	16/16	1737	97985	discard	beta=0.00001
+320bdd4	-0.059138	7229.176270	15/16	1652	97985	discard	SiLU activation instead of GELU
+408e6fa	-0.018085	805.956726	15/16	1746	97985	discard	EMA decay=0.999
+ef4dd46	-0.004378	319.871979	16/16	1738	97985	discard	Best checkpoint eval
+ac99692	-0.043378	2.391422	12/16	1904	97985	discard	softmax+cumsum decoder monotonicity
+772277b	-0.002438	3433.383057	14/16	1947	97985	discard	Squared KL divergence loss
+59d9c9b	-0.009276	770.808533	11/16	1716	97985	discard	beta=0.001
