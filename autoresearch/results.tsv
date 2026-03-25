@@ -46,3 +46,4 @@ fca3401	-0.000626	0.084565	24/24	539	753456	discard	R20: LR warmup 10 epochs
 afd7700	-0.002359	0.121263	24/24	525	753456	discard	R25: LR 5e-4->3e-4
 eb15e01	0.001832	0.134025	24/24	542	753456	discard	R26: dilated conv in encoder
 a79a205	-0.001523	0.098314	24/24	535	754160	baseline	Zero-frac conditioned VAE baseline
+26db191	0.000327	0.092719	24/24	530	754160	keep	ZF-R1: MASK_STEEPNESS 50->100
