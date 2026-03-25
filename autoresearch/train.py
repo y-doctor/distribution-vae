@@ -44,7 +44,7 @@ from prepare import (
 # HYPERPARAMETERS — feel free to modify
 # ============================================================================
 
-LATENT_DIM = 16
+LATENT_DIM = 24
 HIDDEN_DIM = 256
 BETA = 0.00005           # KL weight (lower to let recon dominate)
 BETA_WARMUP_EPOCHS = 30  # Linear warmup from 0 to BETA
@@ -55,6 +55,7 @@ GRAD_CLIP = 1.0
 BATCH_SIZE = 256
 SEED = 42
 DENSITY_WEIGHT = 0.1     # Weight for density matching loss (targets KL metric)
+TAIL_WEIGHT = 2.0        # Extra weight on tail quantiles (top 20%)
 
 # ============================================================================
 # LOSS FUNCTIONS — feel free to modify or add new ones
@@ -64,6 +65,24 @@ DENSITY_WEIGHT = 0.1     # Weight for density matching loss (targets KL metric)
 def cramer_distance(sorted_x: torch.Tensor, sorted_y: torch.Tensor) -> torch.Tensor:
     """Cramer distance: MSE between quantile grids. Shape: (batch,)."""
     return torch.mean((sorted_x - sorted_y) ** 2, dim=-1)
+
+
+def tail_weighted_cramer(
+    sorted_x: torch.Tensor, sorted_y: torch.Tensor, tail_weight: float = 2.0
+) -> torch.Tensor:
+    """Cramer distance with extra weight on tail quantiles (top 20%).
+
+    Zero-inflated distributions have most quantile positions near 0.
+    The informative tail structure lives in the upper quantiles, so we
+    up-weight those positions to force the model to reconstruct the tail.
+    """
+    n = sorted_x.shape[-1]
+    weights = torch.ones(n, device=sorted_x.device)
+    tail_start = int(0.8 * n)
+    weights[tail_start:] = tail_weight
+    weights = weights / weights.mean()  # normalize so total weight is unchanged
+    sq_diff = (sorted_x - sorted_y) ** 2
+    return torch.mean(sq_diff * weights.unsqueeze(0), dim=-1)
 
 
 def wasserstein1_distance(sorted_x: torch.Tensor, sorted_y: torch.Tensor) -> torch.Tensor:
@@ -136,45 +155,32 @@ class DistributionEncoder(nn.Module):
 
 
 class DistributionDecoder(nn.Module):
-    """1D CNN decoder with residual block + monotonicity enforcement: z -> quantile grid."""
+    """MLP decoder with monotonicity via cumsum(softplus): z -> quantile grid.
+
+    Uses a deep MLP instead of ConvTranspose to give full flexibility over all
+    256 output positions — critical for zero-inflated distributions that need
+    many near-zero deltas followed by a sharp rise.
+    """
 
     def __init__(self, grid_size: int, latent_dim: int, hidden_dim: int) -> None:
         super().__init__()
         self.grid_size = grid_size
-        self.hidden_dim = hidden_dim
-        self.initial_length = 8
-        c1, c2 = hidden_dim // 2, hidden_dim // 4
 
-        self.fc = nn.Linear(latent_dim, hidden_dim * self.initial_length)
-        self.bn_fc = nn.BatchNorm1d(hidden_dim)
-
-        self.deconv1 = nn.ConvTranspose1d(hidden_dim, c1, kernel_size=4, stride=2, padding=1)
-        self.bn1 = nn.BatchNorm1d(c1)
-        self.deconv2 = nn.ConvTranspose1d(c1, c2, kernel_size=4, stride=2, padding=1)
-        self.bn2 = nn.BatchNorm1d(c2)
-
-        # Residual refinement at c2 channels
-        self.res_conv1 = nn.Conv1d(c2, c2, kernel_size=3, padding=1)
-        self.res_bn1 = nn.BatchNorm1d(c2)
-        self.res_conv2 = nn.Conv1d(c2, c2, kernel_size=3, padding=1)
-        self.res_bn2 = nn.BatchNorm1d(c2)
-
-        self.deconv3 = nn.ConvTranspose1d(c2, 1, kernel_size=4, stride=2, padding=1)
+        self.mlp = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, grid_size),
+        )
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
-        h = self.fc(z).view(-1, self.hidden_dim, self.initial_length)
-        h = F.gelu(self.bn_fc(h))
-        h = F.gelu(self.bn1(self.deconv1(h)))
-        h = F.gelu(self.bn2(self.deconv2(h)))
-        # Residual block
-        r = F.gelu(self.res_bn1(self.res_conv1(h)))
-        h = h + self.res_bn2(self.res_conv2(r))
-        h = F.gelu(h)
-        h = self.deconv3(h).squeeze(1)
-        if h.shape[-1] != self.grid_size:
-            h = F.interpolate(
-                h.unsqueeze(1), size=self.grid_size, mode="linear", align_corners=True
-            ).squeeze(1)
+        h = self.mlp(z)
         # Enforce monotonicity: start + cumsum(softplus(deltas))
         start = h[:, :1]
         deltas = F.softplus(h[:, 1:])
@@ -221,8 +227,8 @@ class DistributionVAE(nn.Module):
         mu: torch.Tensor,
         logvar: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
-        # Reconstruction loss: Cramer (pointwise) + density matching (targets KL metric)
-        cramer = cramer_distance(input_grid, recon).mean()
+        # Reconstruction loss: tail-weighted Cramer + density matching (targets KL metric)
+        cramer = tail_weighted_cramer(input_grid, recon, tail_weight=TAIL_WEIGHT).mean()
         density = density_matching_loss(input_grid, recon).mean()
         recon_loss = cramer + DENSITY_WEIGHT * density
 
