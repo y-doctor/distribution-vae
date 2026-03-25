@@ -185,7 +185,7 @@ class DistributionDecoder(nn.Module):
 
         # Build the non-zero shape via cumsum(sharp_softplus)
         start = h[:, :1]
-        deltas = F.softplus(h[:, 1:], beta=10)
+        deltas = F.softplus(h[:, 1:], beta=15)
         shape = torch.cat([start, start + torch.cumsum(deltas, dim=-1)], dim=-1)
 
         # Apply soft mask: sigmoid pushes values to 0 below the zero_frac transition
