@@ -57,7 +57,7 @@ SEED = 42
 DENSITY_WEIGHT = 0.1     # Weight for density matching loss (targets KL metric)
 TAIL_WEIGHT = 2.0        # Extra weight on tail quantiles (top 20%)
 ZERO_EPS = 0.01          # Threshold for counting "zero" values in quantile grid
-MASK_STEEPNESS = 50.0    # Steepness of the sigmoid mask at the zero-nonzero transition
+MASK_STEEPNESS = 100.0   # Steepness of the sigmoid mask at the zero-nonzero transition
 
 # ============================================================================
 # LOSS FUNCTIONS — feel free to modify or add new ones
