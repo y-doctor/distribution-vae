@@ -155,11 +155,12 @@ class DistributionEncoder(nn.Module):
 
 
 class DistributionDecoder(nn.Module):
-    """MLP decoder with monotonicity via cumsum(softplus): z -> quantile grid.
+    """MLP decoder with monotonicity via cumsum(sharp_softplus): z -> quantile grid.
 
-    Uses a deep MLP instead of ConvTranspose to give full flexibility over all
-    256 output positions — critical for zero-inflated distributions that need
-    many near-zero deltas followed by a sharp rise.
+    Uses softplus(beta=10) — much sharper than default beta=1, so deltas are
+    near-zero for negative inputs (eliminating the rightward bias from accumulated
+    small positives) while keeping gradients alive (unlike relu which kills them).
+    At beta=10: softplus(-1) ≈ 4.5e-5 vs beta=1: softplus(-1) ≈ 0.31.
     """
 
     def __init__(self, grid_size: int, latent_dim: int, hidden_dim: int) -> None:
@@ -181,9 +182,10 @@ class DistributionDecoder(nn.Module):
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         h = self.mlp(z)
-        # Enforce monotonicity: start + cumsum(softplus(deltas))
+        # Enforce monotonicity: start + cumsum(sharp_softplus(deltas))
+        # beta=10 gives near-zero deltas for flat regions while keeping gradients
         start = h[:, :1]
-        deltas = F.softplus(h[:, 1:])
+        deltas = F.softplus(h[:, 1:], beta=10)
         return torch.cat([start, start + torch.cumsum(deltas, dim=-1)], dim=-1)
 
 
