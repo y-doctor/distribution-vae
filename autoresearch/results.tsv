@@ -45,3 +45,4 @@ fca3401	-0.000626	0.084565	24/24	539	753456	discard	R20: LR warmup 10 epochs
 2c19593	0.002677	0.111307	24/24	536	790320	discard	R24: AdaptiveAvgPool1d(4)
 afd7700	-0.002359	0.121263	24/24	525	753456	discard	R25: LR 5e-4->3e-4
 eb15e01	0.001832	0.134025	24/24	542	753456	discard	R26: dilated conv in encoder
+a79a205	-0.001523	0.098314	24/24	535	754160	baseline	Zero-frac conditioned VAE baseline
