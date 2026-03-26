@@ -48,16 +48,17 @@ LATENT_DIM = 24
 HIDDEN_DIM = 256
 BETA = 0.00005           # KL weight (lower to let recon dominate)
 BETA_WARMUP_EPOCHS = 30  # Linear warmup from 0 to BETA
-FREE_BITS = 0.0          # Per-dim KL floor (0 = disabled)
+FREE_BITS = 0.5          # Per-dim KL floor — prevents dimension collapse
 LR = 5e-4
 WEIGHT_DECAY = 1e-4
 GRAD_CLIP = 1.0
 BATCH_SIZE = 256
 SEED = 42
-DENSITY_WEIGHT = 0.15     # Weight for density matching loss (targets KL metric)
+DENSITY_WEIGHT = 0.15    # Weight for density matching loss (targets KL metric)
 TAIL_WEIGHT = 2.0        # Extra weight on tail quantiles (top 20%)
 ZERO_EPS = 0.01          # Threshold for counting "zero" values in quantile grid
 MASK_STEEPNESS = 100.0   # Steepness of the sigmoid mask at the zero-nonzero transition
+MASK_MARGIN = 0.02       # Margin so mask is ~1 at position 0 when zero_frac=0
 
 # ============================================================================
 # LOSS FUNCTIONS — feel free to modify or add new ones
@@ -103,23 +104,24 @@ def extract_zero_frac(x: torch.Tensor, eps: float = ZERO_EPS) -> torch.Tensor:
 
 
 # ============================================================================
-# MODEL ARCHITECTURE — zero-fraction conditioned VAE
+# MODEL ARCHITECTURE — zero-fraction conditioned VAE with scale normalization
 # ============================================================================
 
 
 class DistributionEncoder(nn.Module):
-    """1D CNN encoder conditioned on zero_frac: quantile grid -> (mu, logvar).
+    """1D CNN encoder with scale normalization + zero_frac conditioning.
 
-    zero_frac is extracted deterministically from the input and provided as
-    side information so the encoder doesn't waste capacity learning it.
+    Normalizes the input grid by its range before encoding, so the latent
+    space only needs to capture the shape, not the scale. zero_frac and
+    scale info are passed as additional channels.
     """
 
     def __init__(self, grid_size: int, latent_dim: int, hidden_dim: int) -> None:
         super().__init__()
         c1, c2, c3 = hidden_dim // 4, hidden_dim // 2, hidden_dim
 
-        # Downsample path — 2 input channels: (quantile_grid, zero_frac_broadcast)
-        self.conv1 = nn.Conv1d(2, c1, kernel_size=7, stride=2, padding=3)
+        # 3 input channels: (normalized_grid, zero_frac_broadcast, scale_broadcast)
+        self.conv1 = nn.Conv1d(3, c1, kernel_size=7, stride=2, padding=3)
         self.bn1 = nn.BatchNorm1d(c1)
         self.conv2 = nn.Conv1d(c1, c2, kernel_size=5, stride=2, padding=2)
         self.bn2 = nn.BatchNorm1d(c2)
@@ -136,10 +138,16 @@ class DistributionEncoder(nn.Module):
         self.fc_mu = nn.Linear(hidden_dim, latent_dim)
         self.fc_logvar = nn.Linear(hidden_dim, latent_dim)
 
-    def forward(self, x: torch.Tensor, zero_frac: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        # Stack grid + zero_frac broadcast as 2-channel input
-        zf_channel = zero_frac.expand(-1, x.shape[-1]).unsqueeze(1)  # (B, 1, G)
-        h = torch.cat([x.unsqueeze(1), zf_channel], dim=1)  # (B, 2, G)
+    def forward(
+        self, x: torch.Tensor, zero_frac: torch.Tensor, scale: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        B, G = x.shape
+        # Normalize grid by scale (range), so model sees shape only
+        x_norm = x / (scale + 1e-6)
+        # 3-channel input: normalized grid, zero_frac, log(scale)
+        zf_ch = zero_frac.expand(-1, G).unsqueeze(1)
+        sc_ch = torch.log1p(scale).expand(-1, G).unsqueeze(1)
+        h = torch.cat([x_norm.unsqueeze(1), zf_ch, sc_ch], dim=1)  # (B, 3, G)
         h = F.gelu(self.bn1(self.conv1(h)))
         h = F.gelu(self.bn2(self.conv2(h)))
         h = F.gelu(self.bn3(self.conv3(h)))
@@ -151,23 +159,21 @@ class DistributionEncoder(nn.Module):
 
 
 class DistributionDecoder(nn.Module):
-    """MLP decoder conditioned on zero_frac: (z, zero_frac) -> quantile grid.
+    """MLP decoder with mask margin fix + scale denormalization.
 
-    Predicts the non-zero shape from z, then applies a soft sigmoid mask
-    based on zero_frac so that quantile positions below the transition are ~0.
-    This separates the "how many zeros" question (answered by zero_frac)
-    from the "what shape is the non-zero part" question (answered by z).
+    Predicts shape in normalized [0,1] space, applies zero-frac mask
+    with margin (so zf=0 distributions aren't suppressed at position 0),
+    then scales back to original range.
     """
 
     def __init__(self, grid_size: int, latent_dim: int, hidden_dim: int) -> None:
         super().__init__()
         self.grid_size = grid_size
-        # Register quantile positions as buffer (not parameter)
         self.register_buffer("positions", torch.linspace(0, 1, grid_size))
 
-        # Input: z (latent_dim) + zero_frac (1)
+        # Input: z (latent_dim) + zero_frac (1) + log_scale (1)
         self.mlp = nn.Sequential(
-            nn.Linear(latent_dim + 1, hidden_dim),
+            nn.Linear(latent_dim + 2, hidden_dim),
             nn.BatchNorm1d(hidden_dim),
             nn.GELU(),
             nn.Linear(hidden_dim, hidden_dim),
@@ -179,26 +185,31 @@ class DistributionDecoder(nn.Module):
             nn.Linear(hidden_dim, grid_size),
         )
 
-    def forward(self, z: torch.Tensor, zero_frac: torch.Tensor) -> torch.Tensor:
-        # Concatenate z with zero_frac
-        h = self.mlp(torch.cat([z, zero_frac], dim=-1))
+    def forward(
+        self, z: torch.Tensor, zero_frac: torch.Tensor, scale: torch.Tensor
+    ) -> torch.Tensor:
+        log_scale = torch.log1p(scale)
+        h = self.mlp(torch.cat([z, zero_frac, log_scale], dim=-1))
 
-        # Build the non-zero shape via cumsum(sharp_softplus)
+        # Build the normalized shape via cumsum(sharp_softplus)
         start = h[:, :1]
         deltas = F.softplus(h[:, 1:], beta=15)
         shape = torch.cat([start, start + torch.cumsum(deltas, dim=-1)], dim=-1)
 
-        # Apply soft mask: sigmoid pushes values to 0 below the zero_frac transition
-        # positions shape: (G,), zero_frac shape: (B, 1)
-        mask = torch.sigmoid(MASK_STEEPNESS * (self.positions.unsqueeze(0) - zero_frac))
-        return shape * mask
+        # Mask with margin: when zero_frac=0, mask at position 0 = sigmoid(100*0.02) ≈ 0.88
+        # This prevents suppression of non-zero-inflated distributions
+        mask = torch.sigmoid(
+            MASK_STEEPNESS * (self.positions.unsqueeze(0) - zero_frac + MASK_MARGIN)
+        )
+
+        # Apply mask in normalized space, then scale back
+        return shape * mask * scale
 
 
 class DistributionVAE(nn.Module):
-    """Zero-fraction conditioned VAE.
+    """Zero-fraction + scale-normalized VAE with KL balancing.
 
-    Embedding = [zero_frac, mu_1, ..., mu_N] where zero_frac is deterministic.
-    The latent z captures the non-zero distribution shape.
+    Embedding = [zero_frac, log_scale, mu_1, ..., mu_N]
     """
 
     def __init__(
@@ -226,18 +237,19 @@ class DistributionVAE(nn.Module):
         return mu
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        # Extract zero_frac deterministically
         zero_frac = extract_zero_frac(x)  # (B, 1)
-        mu, logvar = self.encoder(x, zero_frac)
+        scale = (x.max(dim=-1, keepdim=True).values - x.min(dim=-1, keepdim=True).values)  # (B, 1)
+        mu, logvar = self.encoder(x, zero_frac, scale)
         z = self.reparameterize(mu, logvar)
-        recon = self.decoder(z, zero_frac)
+        recon = self.decoder(z, zero_frac, scale)
         return recon, mu, logvar, z
 
     def get_embedding(self, x: torch.Tensor) -> torch.Tensor:
-        """Get the full embedding: [zero_frac, mu_1, ..., mu_N]."""
+        """Get the full embedding: [zero_frac, log_scale, mu_1, ..., mu_N]."""
         zero_frac = extract_zero_frac(x)
-        mu, _ = self.encoder(x, zero_frac)
-        return torch.cat([zero_frac, mu], dim=-1)
+        scale = (x.max(dim=-1, keepdim=True).values - x.min(dim=-1, keepdim=True).values)
+        mu, _ = self.encoder(x, zero_frac, scale)
+        return torch.cat([zero_frac, torch.log1p(scale), mu], dim=-1)
 
     def compute_loss(
         self,
@@ -246,12 +258,12 @@ class DistributionVAE(nn.Module):
         mu: torch.Tensor,
         logvar: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
-        # Reconstruction loss: tail-weighted Cramer + density matching (targets KL metric)
+        # Reconstruction loss: tail-weighted Cramer + density matching
         cramer = tail_weighted_cramer(input_grid, recon, tail_weight=TAIL_WEIGHT).mean()
         density = density_matching_loss(input_grid, recon).mean()
         recon_loss = cramer + DENSITY_WEIGHT * density
 
-        # KL divergence
+        # KL divergence with free_bits for balanced latent usage
         kl_per_dim = 0.5 * (mu.pow(2) + logvar.exp() - 1 - logvar)
         if self.free_bits > 0:
             kl_dim_mean = kl_per_dim.mean(dim=0)
