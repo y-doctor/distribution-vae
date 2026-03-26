@@ -51,3 +51,4 @@ a79a205	-0.001523	0.098314	24/24	535	754160	baseline	Zero-frac conditioned VAE b
 c4753f4	-0.000078	0.112151	24/24	516	754160	keep	ZF-R3: DENSITY_WEIGHT 0.1->0.15
 a99d14d	-0.000830	-	32/32	-	760320	discard	ZF-R9: LATENT_DIM 24->32
 20b00c2	0.001001	-	24/24	-	754160	discard	ZF-R20: softplus beta 15->20
+0bbfe3f	-0.000265	-	24/24	-	754864	baseline	v2: mask margin + scale norm + free_bits
