@@ -54,3 +54,4 @@ a99d14d	-0.000830	-	32/32	-	760320	discard	ZF-R9: LATENT_DIM 24->32
 0bbfe3f	-0.000265	-	24/24	-	754864	baseline	v2: mask margin + scale norm + free_bits
 597392c	0.000242	-	24/24	-	754864	keep	v2-R1: MASK_MARGIN 0.02->0.05
 3fed12d	0.000012	-	24/24	-	754864	keep	v2-R2: FREE_BITS 0.5->1.0
+e075d63	-0.000456	-	24/24	-	754864	discard	v2-R10: LR 5e-4->3e-4
