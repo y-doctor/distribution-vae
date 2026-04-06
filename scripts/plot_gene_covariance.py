@@ -1,5 +1,8 @@
 """Plot gene-gene covariance matrices for perturbations in mini Norman dataset.
 
+Genes are ordered by hierarchical clustering of the control perturbation's
+covariance matrix. All panels share the same color scale.
+
 Row 1: Raw covariance matrices for a control perturbation + 6 others.
 Row 2: Difference (perturbation - control) covariance matrices.
 """
@@ -12,6 +15,21 @@ from pathlib import Path
 import anndata as ad
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.cluster.hierarchy import leaves_list, linkage
+from scipy.spatial.distance import squareform
+
+
+def _cluster_order(cov: np.ndarray) -> np.ndarray:
+    """Compute gene ordering via hierarchical clustering on 1-|corr|."""
+    std = np.sqrt(np.diag(cov))
+    std[std == 0] = 1e-10
+    corr = cov / np.outer(std, std)
+    corr = np.clip(corr, -1, 1)
+    dist = 1 - np.abs(corr)
+    np.fill_diagonal(dist, 0)
+    dist = (dist + dist.T) / 2
+    Z = linkage(squareform(dist), method="average")
+    return leaves_list(Z)
 
 
 def main() -> None:
@@ -21,7 +39,7 @@ def main() -> None:
     parser.add_argument("--perturbations", nargs="+", default=None,
                         help="Perturbations to show (default: 6 largest after control)")
     parser.add_argument("--output", type=str, default="gene_gene_covariance.png")
-    parser.add_argument("--dpi", type=int, default=150)
+    parser.add_argument("--dpi", type=int, default=200)
     args = parser.parse_args()
 
     adata = ad.read_h5ad(args.input)
@@ -47,12 +65,20 @@ def main() -> None:
         cell_counts[p] = int(mask.sum())
         cov_matrices[p] = np.cov(X[mask], rowvar=False)
 
+    # Cluster genes by control covariance and reorder all matrices
+    order = _cluster_order(cov_matrices[control])
+    for p in all_perts:
+        cov_matrices[p] = cov_matrices[p][np.ix_(order, order)]
+
     # Difference matrices
     diff_matrices = {p: cov_matrices[p] - cov_matrices[control] for p in perturbations}
 
-    # Color scales (95th percentile of absolute values)
-    vmax_raw = np.percentile(np.abs(np.concatenate([cov_matrices[p].ravel() for p in all_perts])), 95)
-    vmax_diff = np.percentile(np.abs(np.concatenate([diff_matrices[p].ravel() for p in perturbations])), 95)
+    # Single shared color scale across all panels
+    all_vals = np.concatenate(
+        [cov_matrices[p].ravel() for p in all_perts]
+        + [diff_matrices[p].ravel() for p in perturbations]
+    )
+    vmax = np.percentile(np.abs(all_vals), 95)
 
     n_cols = len(all_perts)
     fig, axes = plt.subplots(2, n_cols, figsize=(4 * n_cols, 8))
@@ -60,14 +86,12 @@ def main() -> None:
     # Row 1: raw covariance
     for i, p in enumerate(all_perts):
         ax = axes[0, i]
-        im1 = ax.imshow(cov_matrices[p], cmap="RdBu_r", vmin=-vmax_raw, vmax=vmax_raw, aspect="equal")
+        im = ax.imshow(cov_matrices[p], cmap="RdBu_r", vmin=-vmax, vmax=vmax, aspect="equal")
         ax.set_title(f"{p}\n({cell_counts[p]} cells)", fontsize=10)
         ax.set_xticks([])
         ax.set_yticks([])
         if i == 0:
             ax.set_ylabel("Gene-gene covariance", fontsize=11)
-
-    fig.colorbar(im1, ax=axes[0, :].tolist(), shrink=0.6, label="Covariance")
 
     # Row 2: control slot is blank, then differences
     axes[1, 0].axis("off")
@@ -76,20 +100,19 @@ def main() -> None:
 
     for i, p in enumerate(perturbations):
         ax = axes[1, i + 1]
-        im2 = ax.imshow(diff_matrices[p], cmap="RdBu_r", vmin=-vmax_diff, vmax=vmax_diff, aspect="equal")
+        ax.imshow(diff_matrices[p], cmap="RdBu_r", vmin=-vmax, vmax=vmax, aspect="equal")
         ax.set_title(f"{p} − {control}", fontsize=10)
         ax.set_xticks([])
         ax.set_yticks([])
         if i == 0:
             ax.set_ylabel(f"Δ Covariance\n(pert − {control})", fontsize=11)
 
-    fig.colorbar(im2, ax=axes[1, :].tolist(), shrink=0.6, label="ΔCovariance")
+    fig.colorbar(im, ax=axes.ravel().tolist(), shrink=0.6, label="Covariance")
 
     fig.suptitle(
-        f"Gene-gene covariance matrices: Norman mini dataset ({adata.n_vars} genes)",
+        f"Gene-gene covariance: {adata.n_vars} genes, clustered by {control}, shared scale",
         fontsize=14, y=1.02,
     )
-    plt.tight_layout()
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
