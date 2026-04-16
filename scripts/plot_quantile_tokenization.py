@@ -24,6 +24,20 @@ import torch
 from dist_vae.data import samples_to_quantile_grid
 
 
+def sample_from_quantile_grid(
+    grid: np.ndarray, n_samples: int, rng: np.random.Generator
+) -> np.ndarray:
+    """Draw n_samples from the distribution implied by a quantile grid.
+
+    Uses inverse-CDF sampling: draw uniform u_j in [0, 1], then linear
+    interpolation of the grid at those u_j values.
+    """
+    K = len(grid)
+    q_grid = np.linspace(0.0, 1.0, K)
+    u = rng.uniform(0.0, 1.0, size=n_samples)
+    return np.interp(u, q_grid, grid)
+
+
 def pick_example_distributions(
     adata: anndata.AnnData,
     perturbation_key: str,
@@ -297,6 +311,94 @@ def plot_sample_size_effect(
     plt.close(fig)
 
 
+def plot_reconstruction_gallery(
+    picks: list[tuple[str, str, np.ndarray]],
+    grid_size: int,
+    out_path: Path,
+    seed: int = 0,
+) -> None:
+    """Side-by-side original vs reconstructed histograms for several distributions.
+
+    Reconstruction: tokenize with K=grid_size, then inverse-CDF sample the same
+    number of points from the token. The token is lossy, so the reconstructed
+    histogram shows how much of the shape the token preserves.
+    """
+    rng = np.random.default_rng(seed)
+    n = len(picks)
+    fig, axes = plt.subplots(n, 2, figsize=(10, 2.2 * n), sharex="row")
+    if n == 1:
+        axes = axes[None, :]
+
+    for i, (gene, pert, samples) in enumerate(picks):
+        token = samples_to_quantile_grid(
+            torch.tensor(samples, dtype=torch.float32), grid_size
+        ).numpy()
+        recon = sample_from_quantile_grid(token, len(samples), rng)
+
+        lo = float(min(samples.min(), recon.min()))
+        hi = float(max(samples.max(), recon.max()))
+        bins = np.linspace(lo, hi, 41)
+
+        axes[i, 0].hist(samples, bins=bins, color="#4a90e2", edgecolor="white")
+        axes[i, 0].set_ylabel(f"{gene}\n{pert}\n(n={len(samples)})", fontsize=8)
+        if i == 0:
+            axes[i, 0].set_title("Original histogram")
+
+        axes[i, 1].hist(recon, bins=bins, color="#27ae60", edgecolor="white")
+        if i == 0:
+            axes[i, 1].set_title(f"Reconstructed from K={grid_size} token")
+        if i == n - 1:
+            axes[i, 0].set_xlabel("expression")
+            axes[i, 1].set_xlabel("expression")
+
+    fig.suptitle(
+        "Tokenize -> resample: how much of the histogram survives the quantile grid?",
+        y=1.0,
+    )
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_reconstruction_by_K(
+    samples: np.ndarray,
+    gene: str,
+    pert: str,
+    out_path: Path,
+    seed: int = 0,
+) -> None:
+    """For one distribution, show original hist + reconstructions at K in {8..256}."""
+    rng = np.random.default_rng(seed)
+    Ks = [8, 16, 32, 64, 128, 256]
+
+    lo = float(samples.min())
+    hi = float(samples.max())
+    bins = np.linspace(lo, hi, 41)
+
+    fig, axes = plt.subplots(1, len(Ks) + 1, figsize=(20, 3.5), sharey=True)
+    axes[0].hist(samples, bins=bins, color="#4a90e2", edgecolor="white")
+    axes[0].set_title(f"Original\n{gene} | {pert} (n={len(samples)})")
+    axes[0].set_xlabel("expression")
+    axes[0].set_ylabel("count")
+
+    for ax, K in zip(axes[1:], Ks):
+        token = samples_to_quantile_grid(
+            torch.tensor(samples, dtype=torch.float32), K
+        ).numpy()
+        recon = sample_from_quantile_grid(token, len(samples), rng)
+        ax.hist(recon, bins=bins, color="#27ae60", edgecolor="white")
+        ax.set_title(f"Reconstructed (K={K})")
+        ax.set_xlabel("expression")
+
+    fig.suptitle(
+        "Original histogram vs reconstruction sampled from the quantile-grid token",
+        y=1.02,
+    )
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--adata", type=str, default="data/mini_perturb_seq.h5ad")
@@ -342,13 +444,26 @@ def main() -> None:
         out_dir / "04_token_matrix.png",
     )
 
-    print("Plot 5/5: sampling-noise effect ...")
+    print("Plot 5/7: sampling-noise effect ...")
     plot_sample_size_effect(
         adata,
         args.perturbation_key,
         args.grid_size,
         out_dir / "05_sampling_noise.png",
         seed=args.seed,
+    )
+
+    print("Plot 6/7: reconstruction gallery (original vs reconstructed hist) ...")
+    plot_reconstruction_gallery(
+        picks,
+        args.grid_size,
+        out_dir / "06_reconstruction_gallery.png",
+        seed=args.seed,
+    )
+
+    print("Plot 7/7: reconstruction by K ...")
+    plot_reconstruction_by_K(
+        samples, gene, pert, out_dir / "07_reconstruction_by_K.png", seed=args.seed
     )
 
     print(f"Saved plots under {out_dir}")
