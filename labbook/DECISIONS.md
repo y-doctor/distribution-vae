@@ -62,6 +62,15 @@
 **Alternatives considered**: Cyclical annealing, delta-VAE, skip connections, aggressive decoder
 **Rationale**: Free-bits is simple, well-understood (Kingma et al. 2016), and compatible with any beta. Doubles KL usage at beta=0.001 (8.0 -> 19.1). Good fallback when beta can't be lowered further.
 
+## [2026-04-16] Default quantile-grid size K=64 for direct-use tokenization
+**Context**: Open question — can we just use the quantile grid directly as a per-(gene, pert) embedding, skipping the VAE? And what is the right K?
+**Decision**: K=64 is the recommended default for downstream tokenization when n_cells per (gene, pert) >= ~100. The raw K=64 quantile-grid vector is a standalone embedding that does not require VAE encoding for most uses.
+**Alternatives considered**:
+- K=256 (current library default `grid_size`): near-lossless but 4x wider than needed.
+- K=16: misses zero-inflated tail detail; captures only ~80% of attainable W1 reduction.
+- Keeping the VAE as the only supported path: unjustified given the reconstruction fidelity of the raw grid.
+**Rationale**: Over 300 (gene, pert) distributions from the mini Norman dataset, K=64 captures 97% of the attainable W1 loss reduction (vs. K=1024) and 91% of Cramer-RMSE reduction; median per-dist W1 = 0.006, p99 = 0.019. Separately, jitter analysis shows sampling noise scales n_cells^-0.5: at n=100 the SNR (signal/jitter) is ~5.5, at n=500 it is ~15. The VAE remains useful for (a) denoising tokens at n_cells < 50, (b) ~4x further compactness (d=16 latent vs 64-dim grid), and (c) generative sampling. But it is not required for a faithful embedding. See `eval_results/quantile_tokenization/panel_K64.png`, `jitter_K64.png`, and `labbook/entries/2026-04-16_1800_k64_tokenization_findings.md`.
+
 ## [2026-03-24] Autoresearch framework (autonomous AI experimentation)
 **Context**: Manual hyperparameter/architecture tuning is slow. Want autonomous AI agent to experiment 24/7.
 **Decision**: Create `autoresearch/` directory following Karpathy's autoresearch pattern: single mutable file (train.py), fixed evaluation infrastructure (prepare.py), agent instructions (program.md), git-based experiment tracking.
