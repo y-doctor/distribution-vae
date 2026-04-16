@@ -1,6 +1,10 @@
 # Task Board
 
 ## TODO
+- [ ] Change `dist_vae/data.py` `grid_size` default 256 -> 64 (after K=64 analysis, see 2026-04-16 entry) — S
+- [ ] Add `scripts/encode_as_grid.py` as VAE-free baseline encoder (produces (N, 64) matrix from AnnData) — S
+- [ ] Prototype zero-inflation-aware tokens: (zero_fraction, K-point grid over non-zeros) — S
+- [ ] Retrain VAE at K=64 input; re-run posterior-collapse diagnostics at smaller grid — M
 - [ ] Run hyperopt on synthetic data end-to-end — S
 - [ ] End-to-end test: Norman et al. full dataset → train → encode → eval — M
 - [ ] Tune hyperparameters on real data using hyperopt module — M
@@ -20,6 +24,10 @@
 - [ ] Analyze autoresearch results and integrate best findings into main library — M
 
 ## DONE
+- [x] **Quantile-grid tokenization fidelity + jitter analysis (K=64 justification)** — completed 2026-04-16 18:00
+  - 300-dist fidelity sweep: K=64 captures 97% of W1 reduction, per-dist median W1 = 0.006
+  - 80-pair jitter sweep: SNR reaches 5 at n~80, 10 at n~300; jitter ~ n_cells^-0.5
+  - See entries/2026-04-16_1800_k64_tokenization_findings.md, panel_K64.png, jitter_K64.png
 - [x] **Fix posterior collapse on real data** — completed 2026-03-18 02:15
   - beta=0.0001 + latent_dim=16 is best: Cramer=0.0092, all 16 dims active, mean std=0.72
   - Implemented free-bits as alternative approach (works but less effective than lowering beta)

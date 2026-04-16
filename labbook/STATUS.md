@@ -1,7 +1,7 @@
 # Project Status
 
-**Last updated**: 2026-03-24 00:00 UTC
-**Updated by**: Session — add autoresearch framework
+**Last updated**: 2026-04-16 18:00 UTC
+**Updated by**: Session — K=64 quantile-grid tokenization analysis
 
 ## What works
 - `dist_vae/losses.py` — All loss functions + CombinedDistributionLoss (47 tests pass)
@@ -9,25 +9,31 @@
 - `dist_vae/model.py` — DistributionEncoder, DistributionDecoder, DistributionVAE with free-bits support
 - `dist_vae/train.py` — Trainer with KL warmup, gradient clipping, checkpointing, perturbation/gene labels in snapshots
 - `dist_vae/eval.py` — All evaluation functions with perturbation/gene labels in all plots
-- `scripts/` — All CLI scripts (train, evaluate, encode, download, hyperopt)
+- `scripts/` — All CLI scripts (train, evaluate, encode, download, hyperopt) + quantile-grid analysis plots
 - **Posterior collapse fixed** — beta=0.0001 + latent_dim=16 gives Cramer=0.0092, all 16 dims active
+- **K=64 quantile-grid tokenization validated as standalone embedding** (no VAE required for n_cells >= 100) — see eval_results/quantile_tokenization/
 - Package installable via `pip install -e ".[dev]"`
 - All 47 tests pass on CPU
 
+## Key findings (2026-04-16)
+- K=64 quantile grid captures 97% of W1 loss-reduction attainable at K=1024; per-dist W1 median 0.006, p99 0.019
+- Sampling jitter scales n_cells^-0.5; SNR (signal/jitter) reaches 5 at n~80, 10 at n~300
+- VAE's main remaining value: denoising low-n_cells tokens and ~4x further compactness
+
 ## What's broken / blocked
 - Latent correlations still high — disentanglement could be improved
-- Tail reconstruction still imperfect for zero-inflated distributions
+- Tail reconstruction still imperfect for zero-inflated distributions (but grid reconstruction is near-lossless)
 - Only tested on mini Norman (100 genes, 10 perturbations) — needs full-scale validation
 
 ## What's in progress
-- Autoresearch framework added — ready for autonomous experimentation
+- None (previous autoresearch task dormant)
 
 ## Next priorities
-1. Test best settings on full 500-gene Norman dataset
-2. Hyperparameter sweep: systematic search including free_bits
-3. Consider W1 loss for better tail differentiation
-4. Investigate total correlation penalty for disentanglement
-5. Add integration tests for training loop
+1. Consider changing `grid_size` default 256 -> 64 in dist_vae/data.py
+2. Add `scripts/encode_as_grid.py` as a VAE-free baseline encoder
+3. Prototype zero-inflation-aware tokens (zero_fraction, K-point grid over non-zeros) — likely 2x further compactness
+4. Retrain VAE at K=64 input to see how the latent compresses further
+5. Test best settings on full 500-gene Norman dataset
 
 ## What's in the repo (data files)
 - `data/synthetic_2k.h5ad` — 2000 synthetic distributions (2.1 MB, committed)
