@@ -82,6 +82,8 @@ def main() -> None:
         d_embed=int(model_cfg.get("d_embed", 32)),
         hidden_dim=int(model_cfg.get("hidden_dim", 64)),
         d_feat=int(model_cfg.get("d_feat", 32)),
+        n_attn_layers=int(model_cfg.get("n_attn_layers", 0)),
+        n_heads=int(model_cfg.get("n_heads", 4)),
     )
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"  model params: {n_params:,}")

@@ -24,6 +24,11 @@
 - [ ] Analyze autoresearch results and integrate best findings into main library — M
 
 ## DONE
+- [x] **Cross-gene transformer attention + UMAP/per-pert-reward evaluation** — completed 2026-04-16 23:30
+  - Added optional `n_attn_layers` to PerturbationClassifier (TransformerEncoder after per-gene MLP)
+  - At matched 50-epoch budget, attention beats MLP: reward 0.637 vs 0.574, top-1 0.186 vs 0.142
+  - Extended eval with UMAP of output-probability vectors, per-pert reward boxplot, top-k / reward-threshold metrics
+  - See entries/2026-04-16_2330_rl_50p_attention_and_umap.md
 - [x] **Scale RL classifier to 500 HVGs x 50 perts + held-out eval + confusion matrix** — completed 2026-04-16 23:00
   - 334-epoch run: train reward 0.84, train top-1 0.60, held-out top-1 0.43 (vs 0.02 random = 21x)
   - Found and fixed early entropy collapse (entropy_coef 0.1 -> 0.3, lr 3e-4 -> 1e-4)

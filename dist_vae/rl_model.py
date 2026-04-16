@@ -36,6 +36,9 @@ class PerturbationClassifier(nn.Module):
         d_embed: int = 32,
         hidden_dim: int = 128,
         d_feat: int = 64,
+        n_attn_layers: int = 0,
+        n_heads: int = 4,
+        attn_dim_feedforward: int | None = None,
     ) -> None:
         super().__init__()
         self.n_all_genes = n_all_genes
@@ -43,6 +46,7 @@ class PerturbationClassifier(nn.Module):
         self.grid_size = grid_size
         self.d_embed = d_embed
         self.d_feat = d_feat
+        self.n_attn_layers = n_attn_layers
 
         self.gene_embed = nn.Embedding(n_all_genes, d_embed)
         nn.init.normal_(self.gene_embed.weight, mean=0.0, std=0.1)
@@ -55,6 +59,23 @@ class PerturbationClassifier(nn.Module):
             nn.GELU(),
             nn.Linear(hidden_dim, d_feat),
         )
+
+        # Optional transformer encoder over the G per-gene feature tokens.
+        # Allows cross-gene attention so the representation of one gene can
+        # depend on the state of others (pathway / co-regulation signal).
+        if n_attn_layers > 0:
+            layer = nn.TransformerEncoderLayer(
+                d_model=d_feat,
+                nhead=n_heads,
+                dim_feedforward=attn_dim_feedforward or 4 * d_feat,
+                dropout=0.0,
+                activation="gelu",
+                batch_first=True,
+                norm_first=True,
+            )
+            self.gene_attn = nn.TransformerEncoder(layer, num_layers=n_attn_layers)
+        else:
+            self.gene_attn = nn.Identity()
 
         # Global head: 2*d_feat (mean + max pool) -> pert logits.
         self.head = nn.Sequential(
@@ -100,6 +121,7 @@ class PerturbationClassifier(nn.Module):
 
         x = torch.cat([ntc_tokens, pert_tokens, delta, g_emb], dim=-1)  # (B, G, 3K+d)
         feats = self.per_gene_mlp(x)                   # (B, G, d_feat)
+        feats = self.gene_attn(feats)                  # (B, G, d_feat) - cross-gene attention (or identity)
 
         mean_feat = feats.mean(dim=1)                  # (B, d_feat)
         max_feat = feats.max(dim=1).values             # (B, d_feat)
