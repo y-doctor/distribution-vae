@@ -61,6 +61,28 @@ def ks_distance_smooth(
     return torch.logsumexp(temperature * abs_diff, dim=-1) / temperature
 
 
+def cosine_similarity(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    dim: int = -1,
+    eps: float = 1e-8,
+) -> torch.Tensor:
+    """Cosine similarity between two tensors along a dimension.
+
+    Args:
+        x: First tensor.
+        y: Second tensor. Must be broadcast-compatible with x.
+        dim: Dimension along which to compute similarity.
+        eps: Small constant for numerical stability in norm division.
+
+    Returns:
+        Cosine similarity tensor with dim collapsed, values in [-1, 1].
+    """
+    x_norm = torch.linalg.vector_norm(x, dim=dim, keepdim=True).clamp_min(eps)
+    y_norm = torch.linalg.vector_norm(y, dim=dim, keepdim=True).clamp_min(eps)
+    return torch.sum((x / x_norm) * (y / y_norm), dim=dim)
+
+
 def kl_divergence_quantile(
     sorted_x: torch.Tensor,
     sorted_y: torch.Tensor,
