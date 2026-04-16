@@ -24,6 +24,11 @@
 - [ ] Analyze autoresearch results and integrate best findings into main library — M
 
 ## DONE
+- [x] **RL perturbation-classifier on K=64 tokens (GRPO kickoff)** — completed 2026-04-16 21:15
+  - 50-epoch training: mean reward 0.78, top-1 acc 50% (vs 10% random)
+  - New: rl_data/rl_model/rl_train modules, train_rl CLI, config, 14 tests
+  - Regenerated data/mini_perturb_seq_with_ntc.h5ad with --keep-controls
+  - See entries/2026-04-16_2115_rl_perturbation_classifier_kickoff.md
 - [x] **Quantile-grid tokenization fidelity + jitter analysis (K=64 justification)** — completed 2026-04-16 18:00
   - 300-dist fidelity sweep: K=64 captures 97% of W1 reduction, per-dist median W1 = 0.006
   - 80-pair jitter sweep: SNR reaches 5 at n~80, 10 at n~300; jitter ~ n_cells^-0.5

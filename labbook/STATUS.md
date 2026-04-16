@@ -1,7 +1,7 @@
 # Project Status
 
-**Last updated**: 2026-04-16 18:00 UTC
-**Updated by**: Session — K=64 quantile-grid tokenization analysis
+**Last updated**: 2026-04-16 21:15 UTC
+**Updated by**: Session — GRPO perturbation-classifier on K=64 tokens
 
 ## What works
 - `dist_vae/losses.py` — All loss functions + CombinedDistributionLoss (47 tests pass)
@@ -12,8 +12,9 @@
 - `scripts/` — All CLI scripts (train, evaluate, encode, download, hyperopt) + quantile-grid analysis plots
 - **Posterior collapse fixed** — beta=0.0001 + latent_dim=16 gives Cramer=0.0092, all 16 dims active
 - **K=64 quantile-grid tokenization validated as standalone embedding** (no VAE required for n_cells >= 100) — see eval_results/quantile_tokenization/
+- **GRPO perturbation-classifier on K=64 tokens** — 50 epochs: mean reward 0.78, top-1 acc 50% (vs 10% random). `dist_vae/rl_{data,model,train}.py`, `scripts/train_rl.py`, `eval_results/rl_perturbation/`. Trained on new `data/mini_perturb_seq_with_ntc.h5ad` (includes 11855 NTC cells).
 - Package installable via `pip install -e ".[dev]"`
-- All 47 tests pass on CPU
+- All 61 tests pass on CPU
 
 ## Key findings (2026-04-16)
 - K=64 quantile grid captures 97% of W1 loss-reduction attainable at K=1024; per-dist W1 median 0.006, p99 0.019
