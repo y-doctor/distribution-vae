@@ -1,7 +1,7 @@
 # Project Status
 
-**Last updated**: 2026-04-16 21:15 UTC
-**Updated by**: Session — GRPO perturbation-classifier on K=64 tokens
+**Last updated**: 2026-04-16 23:05 UTC
+**Updated by**: Session — GRPO classifier scaled to 500 HVGs x 50 perts
 
 ## What works
 - `dist_vae/losses.py` — All loss functions + CombinedDistributionLoss (47 tests pass)
@@ -13,6 +13,7 @@
 - **Posterior collapse fixed** — beta=0.0001 + latent_dim=16 gives Cramer=0.0092, all 16 dims active
 - **K=64 quantile-grid tokenization validated as standalone embedding** (no VAE required for n_cells >= 100) — see eval_results/quantile_tokenization/
 - **GRPO perturbation-classifier on K=64 tokens** — 50 epochs: mean reward 0.78, top-1 acc 50% (vs 10% random). `dist_vae/rl_{data,model,train}.py`, `scripts/train_rl.py`, `eval_results/rl_perturbation/`. Trained on new `data/mini_perturb_seq_with_ntc.h5ad` (includes 11855 NTC cells).
+- **GRPO scaled to 500 HVGs x 50 perts** — 334 epochs: train mean reward 0.84, train top-1 0.60, **held-out top-1 0.43** (vs 0.02 random = 21x). Confusion matrix shows errors cluster exactly at reward-degenerate pairs. `configs/rl_perturbation_50p.yaml`, `scripts/eval_rl_perturbation.py`, `eval_results/rl_perturbation_50p/`. Trained on new `data/mini_perturb_seq_500g_50p_ntc.h5ad`.
 - Package installable via `pip install -e ".[dev]"`
 - All 61 tests pass on CPU
 

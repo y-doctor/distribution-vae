@@ -3,6 +3,7 @@ data/*.h5ad
 !data/synthetic_2k.h5ad
 !data/mini_perturb_seq.h5ad
 !data/mini_perturb_seq_with_ntc.h5ad
+!data/mini_perturb_seq_500g_50p_ntc.h5ad
 data/*.h5
 data/*.npz
 data/*.png
@@ -45,6 +46,7 @@ eval_results/*
 !eval_results/beta_0.001_freebits/
 !eval_results/quantile_tokenization/
 !eval_results/rl_perturbation/
+!eval_results/rl_perturbation_50p/
 
 # Download cache artifacts
 https:/
