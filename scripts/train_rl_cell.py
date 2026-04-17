@@ -78,6 +78,7 @@ def main() -> None:
         split_seed=split_seed,
         mode="train",
         return_cells=True,
+        singles_only=bool(data_cfg.get("singles_only", False)),
     )
     P = len(dataset.perturbation_names)
     print(f"  perturbations: {P}")

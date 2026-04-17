@@ -1,0 +1,48 @@
+# 2kg x 105-singles config for the per-cell set-transformer classifier.
+# Filters Norman 2019 dual-CRISPRa screen to single-gene perts only (no
+# underscore-joined paired perts). 105 classes after filtering at min_cells=30.
+# Uses data/mini_perturb_seq_2kg_allp_ntc.h5ad (regenerate with
+# `python scripts/download_2kg_data.py` if missing).
+
+model:
+  d: 48
+  n_modules: 16
+  n_cell_layers: 2
+  n_cross_layers: 2
+  n_heads: 4
+  dropout: 0.1
+
+data:
+  perturbation_key: "perturbation"
+  control_label: "control"
+  n_cells_per_pert: 50
+  n_cells_ntc: 50
+  grid_size: 64
+  min_cells: 30
+  samples_per_epoch: 100
+  val_fraction: 0.20
+  split_seed: 123
+  singles_only: true
+
+rl:
+  group_size: 105          # full-enumeration GRPO: == n_singles
+  kl_coef: 0.0
+  entropy_coef: 0.3
+  lr: 1.0e-4
+  weight_decay: 0.0
+  grad_clip: 0.5
+
+training:
+  epochs: 150
+  batch_size: 4
+  seed: 42
+
+reward:
+  profile_type: "delta_mean"
+  row_normalize: true
+
+logging:
+  print_every: 1
+  checkpoint_dir: "checkpoints/rl_cell_2kg_singles/"
+  eval_dir: "eval_results/rl_cell_2kg_singles/"
+  wandb: false

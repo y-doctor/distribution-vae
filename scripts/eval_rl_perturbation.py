@@ -732,6 +732,12 @@ def main() -> None:
         help="'token' = quantile-grid PerturbationClassifier; "
              "'cell' = raw-cell PerturbationCellClassifier.",
     )
+    parser.add_argument(
+        "--singles-only", action="store_true",
+        help="Filter to single-gene perturbations (no '_' in name). Must "
+             "match the training config, otherwise the 236-class model head "
+             "won't align with the 105-class dataset.",
+    )
     args = parser.parse_args()
 
     _set_style()
@@ -749,6 +755,7 @@ def main() -> None:
         val_fraction=args.val_fraction,
         split_seed=args.split_seed,
         mode=args.mode if args.val_fraction > 0 else "train",
+        singles_only=args.singles_only,
     )
     if args.val_fraction > 0:
         print(f"  evaluating on {args.mode} split (val_fraction={args.val_fraction})")

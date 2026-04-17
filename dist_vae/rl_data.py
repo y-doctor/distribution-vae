@@ -109,6 +109,7 @@ class PerturbationClassificationDataset(Dataset):
         split_seed: int = 123,
         mode: str = "train",
         return_cells: bool = False,
+        singles_only: bool = False,
     ) -> None:
         """See class docstring.
 
@@ -124,6 +125,9 @@ class PerturbationClassificationDataset(Dataset):
             return_cells: If True, ``__getitem__`` returns raw (n_cells, G)
                 cell matrices instead of (G, K) quantile tokens. Used by the
                 per-cell set-transformer classifier in ``rl_cell_model``.
+            singles_only: If True, drop perts whose name contains ``_``
+                (paired / combo perts in the Norman 2019 dual-CRISPRa
+                convention). Leaves singles + the control NTC pool.
         """
         super().__init__()
         self.n_cells_per_pert = n_cells_per_pert
@@ -147,7 +151,10 @@ class PerturbationClassificationDataset(Dataset):
 
         pert_counts = pert_col[~is_control].value_counts()
         valid_perts = pert_counts[pert_counts >= min_cells].index.tolist()
+        if singles_only:
+            valid_perts = [p for p in valid_perts if "_" not in p]
         self.perturbation_names = sorted(valid_perts)
+        self.singles_only = singles_only
 
         X = adata.X
         if sp.issparse(X):

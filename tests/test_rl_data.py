@@ -150,3 +150,31 @@ def test_dataset_return_cells_default_is_tokens(tiny_adata):
     G = tiny_adata.shape[1]
     assert ntc.shape == (G, 32), f"expected (G, K), got {tuple(ntc.shape)}"
     assert pert.shape == (G, 32)
+
+
+def test_singles_only_filters_paired_perts():
+    """singles_only drops perts containing '_' in name."""
+    rng = np.random.default_rng(0)
+    n_ctrl = 400
+    n_per_pert = 150
+    gene_names = [f"G{i:02d}" for i in range(20)]
+    perts = ["control", "A", "B", "A_B", "C_D"]
+    rows, pert_labels = [], []
+    for p in perts:
+        n = n_ctrl if p == "control" else n_per_pert
+        rows.append(rng.normal(size=(n, 20)))
+        pert_labels.extend([p] * n)
+    X = np.concatenate(rows, axis=0).astype(np.float32)
+    obs = pd.DataFrame({"perturbation": pert_labels})
+    var = pd.DataFrame(index=gene_names)
+    adata = ad.AnnData(X=X, obs=obs, var=var)
+
+    ds_all = PerturbationClassificationDataset(
+        adata, samples_per_epoch=4, min_cells=10,
+    )
+    assert set(ds_all.perturbation_names) == {"A", "B", "A_B", "C_D"}
+
+    ds_singles = PerturbationClassificationDataset(
+        adata, samples_per_epoch=4, min_cells=10, singles_only=True,
+    )
+    assert set(ds_singles.perturbation_names) == {"A", "B"}
