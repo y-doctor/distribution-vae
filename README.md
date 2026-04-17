@@ -66,6 +66,9 @@ python scripts/train.py --config configs/default.yaml --synthetic
 # Download sample Perturb-seq data (Norman et al. 2019)
 python scripts/download_sample_data.py
 
+# Or re-materialize the 2kg × 236-pert dataset used by the RL configs
+python scripts/download_2kg_data.py
+
 # Train on real data
 python scripts/train.py --config configs/example_perturb_seq.yaml \
     --adata data/sample_perturb_seq.h5ad

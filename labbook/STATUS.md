@@ -43,6 +43,7 @@
 ## What's in the repo (data files)
 - `data/synthetic_2k.h5ad` — 2000 synthetic distributions (2.1 MB, committed)
 - `data/mini_perturb_seq.h5ad` — Mini Norman 2019: 9452 cells x 100 genes x 10 perts (4.6 MB, committed)
+- `data/mini_perturb_seq_2kg_allp_ntc.h5ad` — 2000 HVGs × all 236 perts, with NTC (gitignored, ~100 MB). Rebuild with `python scripts/download_2kg_data.py`.
 
 ## Eval results
 - `eval_results/real_1k_epochs/` — Baseline: beta=0.01, d=32, 1000 epochs (COLLAPSED)
