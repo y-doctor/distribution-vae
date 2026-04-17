@@ -83,6 +83,22 @@ def cosine_similarity(
     return torch.sum((x / x_norm) * (y / y_norm), dim=dim)
 
 
+def pearson_correlation(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    dim: int = -1,
+    eps: float = 1e-8,
+) -> torch.Tensor:
+    """Pearson correlation coefficient along a dimension.
+
+    Equivalent to cosine similarity after mean-centering each input along
+    ``dim``. Values in [-1, 1].
+    """
+    x_c = x - x.mean(dim=dim, keepdim=True)
+    y_c = y - y.mean(dim=dim, keepdim=True)
+    return cosine_similarity(x_c, y_c, dim=dim, eps=eps)
+
+
 def kl_divergence_quantile(
     sorted_x: torch.Tensor,
     sorted_y: torch.Tensor,

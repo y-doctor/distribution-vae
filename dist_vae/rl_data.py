@@ -238,3 +238,61 @@ class PerturbationClassificationDataset(Dataset):
         for i, cells in enumerate(self._pert_cells_full):
             profiles[i] = cells.mean(axis=0) - ntc_mean
         return torch.from_numpy(profiles)
+
+    def compute_ntc_noise_baseline(
+        self,
+        profiles: torch.Tensor,
+        n_cells: int,
+        metric: str = "pearson",
+        K: int = 200,
+        quantile: float = 0.95,
+        seed: int = 42,
+    ) -> torch.Tensor:
+        """Per-pert correlation floor from NTC-only "noise" pseudo-profiles.
+
+        For each true pert i with profile ``profiles[i]``:
+            1. Draw K independent subsamples of ``n_cells`` NTC cells.
+            2. Form pseudo-profiles ``pseudo_k = mean(ntc_subsample_k) -
+               mean(all_ntc)`` — a noise-only "delta".
+            3. Correlate each pseudo-profile with ``profiles[i]`` under the
+               requested metric.
+            4. Take the ``quantile`` of that K-sized null distribution.
+
+        Returned shape: ``(P,)`` — per-pert floor such that any predicted
+        pert j with ``metric(profiles[i], profiles[j]) <= baseline[i]`` is
+        indistinguishable from "predicting NTC pretending to be i."
+
+        Args:
+            profiles: (P, G) delta-mean profile table.
+            n_cells: Number of NTC cells per subsample (match training n_cells_*).
+            metric: "pearson" or "cosine".
+            K: Number of subsamples (null size).
+            quantile: Quantile of the null (0.95 = one-tailed 5% threshold).
+            seed: RNG seed for reproducibility.
+        """
+        from dist_vae.losses import cosine_similarity, pearson_correlation
+
+        assert metric in ("pearson", "cosine"), metric
+        metric_fn = pearson_correlation if metric == "pearson" else cosine_similarity
+
+        ntc = self._ntc_cells_full                           # (N, G)
+        N = ntc.shape[0]
+        if N < n_cells:
+            raise ValueError(
+                f"Need {n_cells} NTC cells per subsample but pool has only {N}."
+            )
+        ntc_mean = ntc.mean(axis=0, keepdims=True)           # (1, G)
+        rng = np.random.default_rng(seed)
+        pseudo = np.zeros((K, ntc.shape[1]), dtype=np.float32)
+        for k in range(K):
+            idx = rng.choice(N, size=n_cells, replace=False)
+            pseudo[k] = ntc[idx].mean(axis=0) - ntc_mean[0]   # (G,)
+        pseudo_t = torch.from_numpy(pseudo)                   # (K, G)
+
+        # (P, 1, G) vs (1, K, G) -> (P, K)
+        corr = metric_fn(
+            profiles.unsqueeze(1),
+            pseudo_t.unsqueeze(0),
+            dim=-1,
+        )
+        return torch.quantile(corr, q=float(quantile), dim=1)

@@ -178,3 +178,45 @@ def test_singles_only_filters_paired_perts():
         adata, samples_per_epoch=4, min_cells=10, singles_only=True,
     )
     assert set(ds_singles.perturbation_names) == {"A", "B"}
+
+
+def test_ntc_noise_baseline_shape_and_range(tiny_adata):
+    """Per-pert NTC-noise baseline returns (P,) values in [-1, 1]."""
+    ds = PerturbationClassificationDataset(
+        tiny_adata, samples_per_epoch=4, min_cells=10,
+    )
+    profiles = ds.compute_delta_mean_profiles()
+    P = profiles.shape[0]
+    baseline = ds.compute_ntc_noise_baseline(
+        profiles, n_cells=50, metric="pearson", K=30, quantile=0.95, seed=0,
+    )
+    assert baseline.shape == (P,)
+    assert (baseline >= -1.0).all() and (baseline <= 1.0).all()
+
+
+def test_ntc_noise_baseline_quantile_monotone(tiny_adata):
+    """Higher quantile should give a higher threshold (monotonic)."""
+    ds = PerturbationClassificationDataset(
+        tiny_adata, samples_per_epoch=4, min_cells=10,
+    )
+    profiles = ds.compute_delta_mean_profiles()
+    b50 = ds.compute_ntc_noise_baseline(
+        profiles, n_cells=50, K=60, quantile=0.5, seed=0,
+    )
+    b95 = ds.compute_ntc_noise_baseline(
+        profiles, n_cells=50, K=60, quantile=0.95, seed=0,
+    )
+    assert (b95 >= b50).all(), f"b95={b95}, b50={b50}"
+
+
+def test_ntc_noise_baseline_pearson_vs_cosine(tiny_adata):
+    """Both metrics run and return finite (P,) tensors."""
+    ds = PerturbationClassificationDataset(
+        tiny_adata, samples_per_epoch=4, min_cells=10,
+    )
+    profiles = ds.compute_delta_mean_profiles()
+    for metric in ("pearson", "cosine"):
+        b = ds.compute_ntc_noise_baseline(
+            profiles, n_cells=50, metric=metric, K=30, seed=0,
+        )
+        assert torch.isfinite(b).all(), metric

@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from dist_vae.losses import cosine_similarity
+from dist_vae.losses import cosine_similarity, pearson_correlation
 from dist_vae.rl_data import PerturbationClassificationDataset
 from dist_vae.rl_model import PerturbationClassifier
 
@@ -185,12 +185,17 @@ def compute_confusion(
     return compute_predictions(model, dataset, R=R, device=device)["confusion"]
 
 
-def compute_reward_matrix(profiles: torch.Tensor) -> np.ndarray:
+def compute_reward_matrix(
+    profiles: torch.Tensor, metric: str = "cosine",
+) -> np.ndarray:
+    """(P, P) pairwise reward-metric matrix between pert delta-mean profiles."""
+    assert metric in ("cosine", "pearson"), metric
+    metric_fn = pearson_correlation if metric == "pearson" else cosine_similarity
     P = profiles.shape[0]
     M = torch.zeros(P, P)
     for i in range(P):
         for j in range(P):
-            M[i, j] = cosine_similarity(profiles[i], profiles[j])
+            M[i, j] = metric_fn(profiles[i], profiles[j])
     return M.numpy()
 
 
@@ -457,9 +462,13 @@ def plot_per_pert_rewards(
     plt.close(fig)
 
 
-def _per_trial_reward(pred_bundle: dict, profiles: torch.Tensor) -> np.ndarray:
-    """Per-trial cos-sim reward between predicted and true pert profiles."""
+def _per_trial_reward(
+    pred_bundle: dict, profiles: torch.Tensor, metric: str = "cosine",
+) -> np.ndarray:
+    """Per-trial reward between predicted and true pert profiles."""
     profiles_np = profiles.numpy()
+    if metric == "pearson":
+        profiles_np = profiles_np - profiles_np.mean(axis=1, keepdims=True)
     unit = profiles_np / np.linalg.norm(profiles_np, axis=1, keepdims=True).clip(min=1e-8)
     return (unit[pred_bundle["pred_p"]] * unit[pred_bundle["true_p"]]).sum(axis=1)
 
@@ -487,9 +496,10 @@ def plot_soft_accuracy_curve(
     profiles: torch.Tensor,
     R_sim: np.ndarray,
     out_path: Path,
+    metric: str = "cosine",
 ) -> dict:
     """Soft-accuracy vs threshold τ — 'picked a pert within reward τ of true'."""
-    rewards = _per_trial_reward(pred_bundle, profiles)
+    rewards = _per_trial_reward(pred_bundle, profiles, metric=metric)
     thresholds = np.round(np.arange(0.50, 1.0001, 0.05), 2)
     model, random = _soft_accuracy_curve(rewards, R_sim, thresholds)
 
@@ -533,6 +543,7 @@ def plot_pert_neighborhoods(
     out_dir: Path,
     tau: float = 0.9,
     n_show: int = 20,
+    metric: str = "cosine",
 ) -> None:
     """Per-pert 'reward ball' plots: best-N and worst-N perts by mean reward-to-true.
 
@@ -551,7 +562,7 @@ def plot_pert_neighborhoods(
     pred_p = pred_bundle["pred_p"]
 
     # Rank perts by mean per-trial reward to their true label.
-    rewards = _per_trial_reward(pred_bundle, profiles)
+    rewards = _per_trial_reward(pred_bundle, profiles, metric=metric)
     per_pert_mean = np.array([
         rewards[true_p == p].mean() if (true_p == p).any() else np.nan
         for p in range(P)
@@ -658,6 +669,7 @@ def report_summary_metrics(
     R_sim: np.ndarray,
     pert_names: list[str],
     out_path: Path,
+    metric: str = "cosine",
 ) -> dict:
     """Compute top-k / reward-threshold metrics and write JSON summary."""
     logits = pred_bundle["logits"]
@@ -675,11 +687,8 @@ def report_summary_metrics(
     ranks = (logits > logits[np.arange(len(true_p)), true_p][:, None]).sum(axis=1) + 1
     mrr = float(np.mean(1.0 / ranks))
 
-    # Per-trial reward and threshold hits.
-    profiles_np = profiles.numpy()
-    norms = np.linalg.norm(profiles_np, axis=1, keepdims=True).clip(min=1e-8)
-    unit = profiles_np / norms
-    rewards = (unit[pred_bundle["pred_p"]] * unit[true_p]).sum(axis=1)
+    # Per-trial reward and threshold hits (match the training metric).
+    rewards = _per_trial_reward(pred_bundle, profiles, metric=metric)
     thr = {}
     for t in (0.5, 0.8, 0.9, 0.95, 0.99):
         thr[f"reward_ge_{t}"] = float((rewards >= t).mean())
@@ -764,13 +773,19 @@ def main() -> None:
     P = len(dataset.perturbation_names)
     print(f"  {P} perts, {len(dataset.vocab.names)} genes in vocab")
 
-    print("Computing delta-mean reward-similarity matrix ...")
-    profiles = dataset.compute_delta_mean_profiles()
-    R_sim = compute_reward_matrix(profiles)
-
     print(f"Loading checkpoint {args.checkpoint} ...")
     ckpt = torch.load(args.checkpoint, weights_only=False, map_location="cpu")
     cfg = ckpt["config"]["model"]
+
+    # Reward metric used at train time — eval reports in the same metric so
+    # the ball-plot thresholds and the training reward are on the same scale.
+    reward_cfg_ckpt = ckpt["config"].get("reward", {})
+    reward_metric = str(reward_cfg_ckpt.get("metric", "cosine"))
+    print(f"  checkpoint reward metric: {reward_metric}")
+
+    print(f"Computing pairwise {reward_metric} reward matrix ...")
+    profiles = dataset.compute_delta_mean_profiles()
+    R_sim = compute_reward_matrix(profiles, metric=reward_metric)
     if args.model_type == "token":
         model = PerturbationClassifier(
             n_all_genes=len(dataset.vocab.names),
@@ -835,18 +850,21 @@ def main() -> None:
 
     print("Plotting soft-accuracy curve (P(reward >= tau) vs tau) ...")
     soft_curve = plot_soft_accuracy_curve(
-        pred_bundle, profiles, R_sim, out / "soft_accuracy_curve.png"
+        pred_bundle, profiles, R_sim, out / "soft_accuracy_curve.png",
+        metric=reward_metric,
     )
 
     print("Plotting per-pert reward-ball neighborhoods (best-20 + worst-20) ...")
     plot_pert_neighborhoods(
         pred_bundle, profiles, R_sim,
         dataset.perturbation_names, out, tau=0.9, n_show=20,
+        metric=reward_metric,
     )
 
     print("Computing summary metrics ...")
     summary = report_summary_metrics(
-        pred_bundle, profiles, R_sim, dataset.perturbation_names, out / "metrics.json"
+        pred_bundle, profiles, R_sim, dataset.perturbation_names,
+        out / "metrics.json", metric=reward_metric,
     )
     summary["soft_accuracy_curve"] = soft_curve
     with open(out / "metrics.json", "w") as f:
