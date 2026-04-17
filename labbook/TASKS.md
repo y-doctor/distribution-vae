@@ -1,6 +1,9 @@
 # Task Board
 
 ## TODO
+- [ ] A/B: `hinge_multiplier=2.0` + rescale on 2kg/singles — test whether stricter threshold helps top-1 without killing weak perts (canaries: BCL2L11, MAP4K3) — S
+- [ ] Port rescale hinge to the rl_cell set-transformer path (50p A/B) — S
+- [ ] Port rescale + combos to full 237-pert data — M
 - [ ] Change `dist_vae/data.py` `grid_size` default 256 -> 64 (after K=64 analysis, see 2026-04-16 entry) — S
 - [ ] Add `scripts/encode_as_grid.py` as VAE-free baseline encoder (produces (N, 64) matrix from AnnData) — S
 - [ ] Prototype zero-inflation-aware tokens: (zero_fraction, K-point grid over non-zeros) — S
@@ -25,6 +28,17 @@
 - [ ] Analyze autoresearch results and integrate best findings into main library — M
 
 ## DONE
+- [x] **Linear-rescale hinge (r_eff = relu((r-θ)/(1-θ)))** — completed 2026-04-17 20:48
+  - 150-ep 2kg/singles A/B vs binary hinge: held-out top-1 0.075 → 0.091 (ens=1, +21% rel), 0.072 → 0.101 (ens=10, +40% rel), P(r≥0.9) 0.083 → 0.112 (+35% rel), MRR 0.161 → 0.180
+  - Ensembling starts helping (+1pp top-1 ens=10 vs ens=1); was flat under binary hinge
+  - `apply_hinge` helper + `hinge_rescale`/`hinge_multiplier` config flags
+  - 9 new unit tests (104 total passing)
+  - See entries/2026-04-17_2048_linear_rescale_hinge_results.md
+- [x] **Reward-landscape intuition viz** — completed 2026-04-17 20:00
+  - `scripts/viz_reward_landscape.py`: per-pert sorted Pearson-reward curves
+  - Off-diag distribution peaks near mean baseline 0.213 — hinge is mild on singles
+  - Weak perts (BCL2L11, MAP4K3) have 0 neighbors above r=0.5 → unreachable top reward
+  - See eval_results/reward_landscape/
 - [x] **Cross-gene transformer attention + UMAP/per-pert-reward evaluation** — completed 2026-04-16 23:30
   - Added optional `n_attn_layers` to PerturbationClassifier (TransformerEncoder after per-gene MLP)
   - At matched 50-epoch budget, attention beats MLP: reward 0.637 vs 0.574, top-1 0.186 vs 0.142

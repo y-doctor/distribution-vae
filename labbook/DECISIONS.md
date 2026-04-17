@@ -86,6 +86,16 @@
 **Alternatives considered**: Extend existing hyperopt module (too constrained — only tunes hyperparameters, not architecture), custom experiment framework (over-engineering)
 **Rationale**: The autoresearch pattern is simple and proven. Single-file modification keeps diffs reviewable. Fixed time budget (5 min) makes experiments comparable. Git commits as experiment tracker — keep on improvement, reset on failure. Agent can modify anything: architecture, losses, optimizer, training loop.
 
+## [2026-04-17] Linear-rescale hinge: r_eff = relu((r - θ) / (1 - θ))
+**Context**: The Pearson + NTC-baseline hinge used a binary shape: zero below θ, raw Pearson above. This has a step discontinuity at θ (barely-above-floor predictions get ~θ reward for "free") and squishes the usable reward range into [θ, 1], compressing GRPO advantages.
+**Decision**: Add a `hinge_rescale` config flag. When true, map above-threshold rewards linearly to [0, 1]: `r_eff = relu((r − θ) / (1 − θ))`. Default remains False (legacy-preserving). Also add `hinge_multiplier` to scale θ (default 1.0).
+**Alternatives considered**:
+- **Keep binary hinge**: simplest but the step at θ is a known GRPO failure mode; observed empirical loss in training (ensembling didn't help, top-1 plateaued early).
+- **Exponential (r^p, p > 1)** above θ: winner-take-all; would zero out ~20% of perts (BCL2L11, MAP4K3) whose ceilings sit around r=0.4 and harm their group gradients.
+- **Concave (sqrt) above θ**: "credit for any progress"; potentially good for weak-signal perts but not the failure mode we see (mediocre-plateau).
+- **Stricter threshold (2× NTC baseline) + binary**: risk of dead groups on weak perts without addressing the discontinuity issue. Deferred as a follow-up ablation with rescale enabled.
+**Rationale**: Standard RL practice is linear rewards, whitened per batch (RLHF, PPO). Under GRPO the rescaling is nonlinear (not an affine transform) because the threshold moves θ→0, changing relative spacing within groups. On 2kg/singles, 150-ep A/B vs binary hinge: held-out top-1 0.075→0.091 (ens=1, +21%), 0.072→0.101 (ens=10, +40%), P(r ≥ 0.9) 0.083→0.112 (+35%), MRR 0.161→0.180. Ensembling now helps (was flat before). Loose metrics (mean reward, P(r ≥ 0.5)) are flat — the win is concentrated in high-confidence correctness. See `labbook/entries/2026-04-17_2048_linear_rescale_hinge_results.md`.
+
 ## [2026-04-17] Per-cell set-transformer classifier with learned gene modules
 **Context**: The quantile-grid classifier (`rl_model.PerturbationClassifier`) collapses each pert's cell population into a single K=64 quantile summary per gene before doing any learning. This throws away (a) per-cell heterogeneity (bimodal / subpopulation responses) and (b) per-cell matching to specific NTC baselines. The ball-plot analysis shows the remaining headroom lives in "isolated perts" — perts with no bio-equivalent neighbors and noisy signal — where population-level summaries may hide the signal.
 **Decision**: Build a parallel classifier that operates on raw cells:

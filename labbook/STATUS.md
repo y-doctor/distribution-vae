@@ -1,7 +1,7 @@
 # Project Status
 
-**Last updated**: 2026-04-17 13:54 UTC
-**Updated by**: Session — cleanup + merge RL perturbation-classifier line into main
+**Last updated**: 2026-04-17 20:48 UTC
+**Updated by**: Session — reward-function intuition viz + linear-rescale hinge A/B
 
 ## What works
 - `dist_vae/losses.py` — All loss functions + CombinedDistributionLoss (47 tests pass)
@@ -18,6 +18,8 @@
 - **Full scale: 2k HVGs x 236 perts with held-out cell split + test-time ensembling** — 150-epoch MLP. Train-cell mean reward 0.812, held-out (val-cell) 0.718 with 10x ensemble 0.729. Ensembling contributes +0.011 reward / +0.015 top-1. See `data/mini_perturb_seq_2kg_allp_ntc.h5ad`, `configs/rl_perturbation_2kg_allp.yaml`, `eval_results/rl_perturbation_2kg_allp/`.
 - **Row-normalized reward** — pre-z-score each row of the (P, P) reward table before GRPO. Train top-1 0.42 → 0.51 (+8.5pp); held-out top-10 0.38 → 0.46 (+7.1pp, ens=1); P(reward >= 0.9) 0.33 → 0.38 (ens=1). Recommended default. `configs/rl_perturbation_2kg_allp_rownorm.yaml`, `eval_results/rl_perturbation_2kg_allp_rownorm/`.
 - **Per-cell set-transformer classifier (rl_cell)** — `dist_vae/rl_cell_model.py`. Raw-cells in, K=16 learned gene modules, 2-layer cell self-attn + 2-layer pert→NTC cross-attn + CLS pool. 150-ep 500g/50p held-out: top-1 0.36, P(r≥0.9) 0.46, top-10 0.78 (ens=10). Trained in ~13 min on CPU. See `eval_results/rl_cell_50p/val_ens10/`.
+- **Reward-landscape intuition viz** — `scripts/viz_reward_landscape.py` plots the sorted Pearson-reward surface per pert with the NTC baseline, showing (a) crowding on strong perts (CEBPA has 10 bio-equiv neighbors above r=0.5), (b) low-support on weak perts (BCL2L11 has 0 above r=0.5), (c) off-diagonal distribution peaks near the mean baseline 0.213 — hinge is milder than expected on singles. `eval_results/reward_landscape/`.
+- **Linear-rescale hinge** — `r_eff = relu((r - θ) / (1 - θ))` above the NTC baseline. New `apply_hinge` helper + `hinge_rescale`/`hinge_multiplier` config flags in `dist_vae/rl_train.py`. 150-ep 2kg/singles A/B vs the binary hinge: held-out top-1 0.075 → 0.091 (ens=1), 0.072 → 0.101 (ens=10), P(r≥0.9) 0.083 → 0.112, MRR 0.161 → 0.180. Ensembling also starts helping (+1pp top-1 from ens=10). `configs/rl_2kg_singles_mlp_pearson_rescale.yaml`, `eval_results/rl_2kg_singles_mlp_pearson_rescale/`.
 - Package installable via `pip install -e ".[dev]"`
 - All 61 tests pass on CPU
 
@@ -32,14 +34,15 @@
 - Only tested on mini Norman (100 genes, 10 perturbations) — needs full-scale validation
 
 ## What's in progress
-- Per-cell set-transformer classifier (`dist_vae/rl_cell_model.py`) — 50p/500g 150-epoch run converged cleanly. Held-out P(r≥0.9)=0.46 (ens=10), top-1=0.36. Competitive with the MLP baseline at half the training budget. See entries/2026-04-17_1540_cell_set_tf_50p_150ep_results.md.
+- Reward-function evaluation: linear rescaling above NTC hinge is a clear win (above). Next knob to test: `hinge_multiplier=2.0` + rescale (stricter threshold) — risk is zero-reward groups on weak perts.
 
 ## Next priorities
-1. Consider changing `grid_size` default 256 -> 64 in dist_vae/data.py
-2. Add `scripts/encode_as_grid.py` as a VAE-free baseline encoder
-3. Prototype zero-inflation-aware tokens (zero_fraction, K-point grid over non-zeros) — likely 2x further compactness
-4. Retrain VAE at K=64 input to see how the latent compresses further
-5. Test best settings on full 500-gene Norman dataset
+1. A/B: `hinge_multiplier=2.0` + rescale on 2kg/singles — does the stricter threshold help top-1 more, or does it kill weak perts?
+2. Port rescale to the rl_cell (set-transformer) path and re-run 50p A/B.
+3. Port rescale + combos to full 237-pert data — hinge bites harder there, more to gain.
+4. Extend training past 150 ep — reward was still climbing, entropy still high.
+5. Consider changing `grid_size` default 256 -> 64 in dist_vae/data.py
+6. Add `scripts/encode_as_grid.py` as a VAE-free baseline encoder
 
 ## What's in the repo (data files)
 - `data/synthetic_2k.h5ad` — 2000 synthetic distributions (2.1 MB, committed)
