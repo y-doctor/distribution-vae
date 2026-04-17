@@ -236,39 +236,61 @@ def plot_confusion_vs_reward(
     R_sim: np.ndarray,
     pert_names: list[str],
     out_path: Path,
+    metric: str = "cosine",
+    hinge_baseline: np.ndarray | None = None,
 ) -> None:
     """Side-by-side reward-similarity matrix and confusion matrix.
 
     Perturbations are reordered by single-linkage hierarchical clustering of
     the reward-similarity matrix so that near-degenerate pairs cluster
     together and the two heatmaps can be compared directly.
+
+    Args:
+        C: (P, P) confusion counts.
+        R_sim: (P, P) raw pairwise reward metric.
+        pert_names: Labels.
+        out_path: Output PNG path.
+        metric: Name of the reward metric ('cosine' or 'pearson'); labels only.
+        hinge_baseline: If provided, a (P,) vector of per-row hinge thresholds.
+            Values <= baseline[i] get zeroed in the displayed reward matrix so
+            the plot shows the *effective* reward the RL trainer sees.
     """
     from scipy.cluster.hierarchy import linkage, leaves_list
     from scipy.spatial.distance import squareform
 
     P = C.shape[0]
-    # Convert cos-sim to distance, then cluster
+    # Apply hinge if supplied so the displayed clustermap matches training.
+    R_display = R_sim.copy()
+    if hinge_baseline is not None:
+        thresh = np.asarray(hinge_baseline)[:, None]     # (P, 1)
+        R_display = np.where(R_display > thresh, R_display, 0.0)
+
+    # Clustering distance based on RAW similarity so ordering is stable
+    # regardless of whether hinge is on.
     D = 1 - R_sim.copy()
     np.fill_diagonal(D, 0.0)
     D = 0.5 * (D + D.T)
     Z = linkage(squareform(D, checks=False), method="average")
     order = leaves_list(Z)
 
-    R_sorted = R_sim[order][:, order]
+    R_sorted = R_display[order][:, order]
     C_norm = C / C.sum(axis=1, keepdims=True).clip(min=1)
     C_sorted = C_norm[order][:, order]
     labels = [pert_names[i] for i in order]
 
+    metric_name = "Pearson r" if metric == "pearson" else "cos-sim"
     fig, axes = plt.subplots(1, 2, figsize=(18, 8.5))
 
-    im0 = axes[0].imshow(R_sorted, cmap="coolwarm", vmin=-1, vmax=1, aspect="auto")
+    vmax = float(max(abs(R_sorted.min()), abs(R_sorted.max()), 1e-6))
+    im0 = axes[0].imshow(R_sorted, cmap="coolwarm", vmin=-vmax, vmax=vmax, aspect="auto")
     axes[0].set_xticks(np.arange(P)); axes[0].set_yticks(np.arange(P))
     axes[0].set_xticklabels(labels, rotation=90, fontsize=6)
     axes[0].set_yticklabels(labels, fontsize=6)
+    hinge_note = "  (hinged at NTC noise baseline)" if hinge_baseline is not None else ""
     axes[0].set_title(
-        "Reward similarity:  cos-sim of delta-mean profiles\n"
+        f"Reward similarity:  {metric_name} of delta-mean profiles{hinge_note}\n"
         "(structure the RL reward sees)", loc="left")
-    fig.colorbar(im0, ax=axes[0], label="cos-sim", fraction=0.04)
+    fig.colorbar(im0, ax=axes[0], label=metric_name, fraction=0.04)
 
     im1 = axes[1].imshow(C_sorted, cmap="viridis", vmin=0, vmax=1, aspect="auto")
     axes[1].set_xticks(np.arange(P)); axes[1].set_yticks(np.arange(P))
@@ -834,9 +856,36 @@ def main() -> None:
     print("Plotting confusion matrix ...")
     plot_confusion(C, dataset.perturbation_names, out / "confusion_matrix.png")
 
+    # Optionally compute the NTC-noise hinge baseline used during training,
+    # so the clustermap shows the effective reward the RL trainer saw.
+    hinge_baseline = None
+    hinge_cfg = reward_cfg_ckpt.get("hinge", "none")
+    if hinge_cfg == "ntc_baseline":
+        n_cells_hinge = int(reward_cfg_ckpt.get(
+            "hinge_n_cells",
+            ckpt["config"].get("data", {}).get("n_cells_per_pert", args.n_cells),
+        ))
+        print(
+            f"Computing NTC-noise hinge baseline "
+            f"(q={reward_cfg_ckpt.get('hinge_quantile', 0.95)}, "
+            f"K={reward_cfg_ckpt.get('hinge_K', 200)}, n_cells={n_cells_hinge}) ..."
+        )
+        hinge_baseline = dataset.compute_ntc_noise_baseline(
+            profiles,
+            n_cells=n_cells_hinge,
+            metric=reward_metric,
+            K=int(reward_cfg_ckpt.get("hinge_K", 200)),
+            quantile=float(reward_cfg_ckpt.get("hinge_quantile", 0.95)),
+        ).numpy()
+    elif hinge_cfg == "fixed":
+        hinge_baseline = np.full(
+            P, float(reward_cfg_ckpt.get("hinge_value", 0.0)), dtype=np.float32,
+        )
+
     print("Plotting confusion vs reward similarity ...")
     plot_confusion_vs_reward(
-        C, R_sim, dataset.perturbation_names, out / "confusion_vs_reward_sim.png"
+        C, R_sim, dataset.perturbation_names, out / "confusion_vs_reward_sim.png",
+        metric=reward_metric, hinge_baseline=hinge_baseline,
     )
 
     print("Plotting UMAP of prediction-probability vectors ...")
