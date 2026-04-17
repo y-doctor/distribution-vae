@@ -62,6 +62,15 @@
 **Alternatives considered**: Cyclical annealing, delta-VAE, skip connections, aggressive decoder
 **Rationale**: Free-bits is simple, well-understood (Kingma et al. 2016), and compatible with any beta. Doubles KL usage at beta=0.001 (8.0 -> 19.1). Good fallback when beta can't be lowered further.
 
+## [2026-04-16] GRPO perturbation classifier on K=64 tokens with delta-mean-cos-sim reward
+**Context**: Want to validate that the K=64 quantile-grid tokens carry enough signal to support a downstream prediction task — given a (NTC, perturbed) phenotype pair, identify the perturbation. RL chosen over supervised CE because it opens the door to non-differentiable rewards, partial-credit signals, and larger action spaces later.
+**Decision**: Use GRPO with full group enumeration (G=10 since we only have 10 classes), entropy bonus 0.05, Adam lr 3e-4. Reward = cosine_similarity(delta_mean_expression[pred], delta_mean_expression[true]) where delta_mean[p] = mean(X_pert) - mean(X_NTC) per gene. Model: per-gene MLP over (ntc_token, pert_token, pert-ntc, gene_embed), mean+max pool, 2-layer head to 10 classes.
+**Alternatives considered**:
+- Supervised cross-entropy: works (100% train acc) but doesn't generalize to the "partial credit" desideratum.
+- Embedding-dot classification head (originally planned): underfit at 10 classes because of shared-gradient interference between the input path and the classifier path; dropped in favor of a simple 2-layer Linear head. The `pert_embeddings()` method is preserved on the model for later re-enablement.
+- G=4 sampling: more noise for no benefit on a 10-class problem; G=10 is strictly superior here.
+**Rationale**: Full-enumeration GRPO gives exact group advantages. Delta-mean cos-sim gives partial credit for reward-equivalent perts (ETS2/MAPK1 are cos-sim 0.99 — effectively the same pert by this reward). The architecture's per-gene `delta_token = pert - ntc` input channel is what unlocks learning: without it both supervised and RL training stall at random. Final 50-epoch results: mean reward 0.78, top-1 acc 50% (vs 10% random); top-1 ceiling is capped by reward degeneracies. See `labbook/entries/2026-04-16_2115_rl_perturbation_classifier_kickoff.md`, `eval_results/rl_perturbation/training_curves.png`, `dist_vae/rl_model.py`.
+
 ## [2026-04-16] Default quantile-grid size K=64 for direct-use tokenization
 **Context**: Open question — can we just use the quantile grid directly as a per-(gene, pert) embedding, skipping the VAE? And what is the right K?
 **Decision**: K=64 is the recommended default for downstream tokenization when n_cells per (gene, pert) >= ~100. The raw K=64 quantile-grid vector is a standalone embedding that does not require VAE encoding for most uses.

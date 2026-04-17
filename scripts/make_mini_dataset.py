@@ -15,6 +15,12 @@ def main() -> None:
     parser.add_argument("--n-genes", type=int, default=100)
     parser.add_argument("--n-perts", type=int, default=10)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--keep-controls",
+        action="store_true",
+        help="Keep non-targeting-control (NTC) cells. If set, the control "
+        "perturbation is guaranteed to be included in the output file.",
+    )
     args = parser.parse_args()
 
     import anndata as ad
@@ -37,12 +43,41 @@ def main() -> None:
 
     # Pick perturbations with the most cells (more representative distributions)
     pert_counts = adata.obs[pert_key].value_counts()
-    # Exclude control-like perturbations if present
-    non_control = pert_counts[~pert_counts.index.str.lower().str.contains("control")]
+
+    if args.keep_controls:
+        # Find the most-abundant control perturbation and guarantee its inclusion.
+        control_mask = pert_counts.index.str.lower().str.contains("control")
+        control_perts = pert_counts[control_mask]
+        if len(control_perts) == 0:
+            print("WARNING: --keep-controls set but no 'control' perturbation found.")
+            non_control = pert_counts
+        else:
+            top_control = control_perts.index[0]
+            print(
+                f"Including control perturbation '{top_control}' "
+                f"({int(control_perts.iloc[0])} cells)."
+            )
+            non_control = pert_counts[~control_mask]
+    else:
+        # Exclude control-like perturbations if present (back-compat).
+        non_control = pert_counts[~pert_counts.index.str.lower().str.contains("control")]
+
     if len(non_control) >= args.n_perts:
-        pert_counts = non_control
-    top_perts = pert_counts.head(args.n_perts * 3).index.tolist()
-    selected_perts = list(rng.choice(top_perts, size=min(args.n_perts, len(top_perts)), replace=False))
+        pert_counts_for_picking = non_control
+    else:
+        pert_counts_for_picking = pert_counts
+    top_perts = pert_counts_for_picking.head(args.n_perts * 3).index.tolist()
+    selected_perts = list(
+        rng.choice(
+            top_perts,
+            size=min(args.n_perts, len(top_perts)),
+            replace=False,
+        )
+    )
+
+    if args.keep_controls and len(control_perts) > 0 and top_control not in selected_perts:
+        selected_perts.append(top_control)
+        print(f"Appended control '{top_control}' to selected perturbations.")
 
     # Subset cells to selected perturbations
     adata = adata[adata.obs[pert_key].isin(selected_perts)].copy()

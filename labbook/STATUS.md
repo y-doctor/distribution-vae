@@ -1,7 +1,7 @@
 # Project Status
 
-**Last updated**: 2026-04-16 18:00 UTC
-**Updated by**: Session — K=64 quantile-grid tokenization analysis
+**Last updated**: 2026-04-17 13:54 UTC
+**Updated by**: Session — cleanup + merge RL perturbation-classifier line into main
 
 ## What works
 - `dist_vae/losses.py` — All loss functions + CombinedDistributionLoss (47 tests pass)
@@ -12,8 +12,13 @@
 - `scripts/` — All CLI scripts (train, evaluate, encode, download, hyperopt) + quantile-grid analysis plots
 - **Posterior collapse fixed** — beta=0.0001 + latent_dim=16 gives Cramer=0.0092, all 16 dims active
 - **K=64 quantile-grid tokenization validated as standalone embedding** (no VAE required for n_cells >= 100) — see eval_results/quantile_tokenization/
+- **GRPO perturbation-classifier on K=64 tokens** — 50 epochs: mean reward 0.78, top-1 acc 50% (vs 10% random). `dist_vae/rl_{data,model,train}.py`, `scripts/train_rl.py`, `eval_results/rl_perturbation/`. Trained on new `data/mini_perturb_seq_with_ntc.h5ad` (includes 11855 NTC cells).
+- **GRPO scaled to 500 HVGs x 50 perts** — 334 epochs: train mean reward 0.84, train top-1 0.60, **held-out top-1 0.43** (vs 0.02 random = 21x). Confusion matrix shows errors cluster exactly at reward-degenerate pairs. `configs/rl_perturbation_50p.yaml`, `scripts/eval_rl_perturbation.py`, `eval_results/rl_perturbation_50p/`. Trained on new `data/mini_perturb_seq_500g_50p_ntc.h5ad`.
+- **Cross-gene transformer attention** — optional `n_attn_layers` on `PerturbationClassifier`. 50-epoch A/B: at matched budget attention gives reward 0.64 vs MLP 0.57, top-1 0.19 vs 0.14 — attention is still climbing at ep 50. Full eval includes UMAP of prediction vectors (per-pert clusters + bio-equiv groups), per-pert reward boxplot, and top-k / reward-threshold summary metrics. See `configs/rl_perturbation_50p_attn.yaml`, `eval_results/rl_perturbation_50p_attn/`. At 300 epochs attention overfits: train reward 0.83, held-out 0.72 (tied with MLP).
+- **Full scale: 2k HVGs x 236 perts with held-out cell split + test-time ensembling** — 150-epoch MLP. Train-cell mean reward 0.812, held-out (val-cell) 0.718 with 10x ensemble 0.729. Ensembling contributes +0.011 reward / +0.015 top-1. See `data/mini_perturb_seq_2kg_allp_ntc.h5ad`, `configs/rl_perturbation_2kg_allp.yaml`, `eval_results/rl_perturbation_2kg_allp/`.
+- **Row-normalized reward** — pre-z-score each row of the (P, P) reward table before GRPO. Train top-1 0.42 → 0.51 (+8.5pp); held-out top-10 0.38 → 0.46 (+7.1pp, ens=1); P(reward >= 0.9) 0.33 → 0.38 (ens=1). Recommended default. `configs/rl_perturbation_2kg_allp_rownorm.yaml`, `eval_results/rl_perturbation_2kg_allp_rownorm/`.
 - Package installable via `pip install -e ".[dev]"`
-- All 47 tests pass on CPU
+- All 61 tests pass on CPU
 
 ## Key findings (2026-04-16)
 - K=64 quantile grid captures 97% of W1 loss-reduction attainable at K=1024; per-dist W1 median 0.006, p99 0.019
@@ -26,7 +31,7 @@
 - Only tested on mini Norman (100 genes, 10 perturbations) — needs full-scale validation
 
 ## What's in progress
-- None (previous autoresearch task dormant)
+- None. RL perturbation-classifier work merged into `main` on 2026-04-17. Previous autoresearch task dormant.
 
 ## Next priorities
 1. Consider changing `grid_size` default 256 -> 64 in dist_vae/data.py

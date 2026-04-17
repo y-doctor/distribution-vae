@@ -24,6 +24,22 @@
 - [ ] Analyze autoresearch results and integrate best findings into main library — M
 
 ## DONE
+- [x] **Cross-gene transformer attention + UMAP/per-pert-reward evaluation** — completed 2026-04-16 23:30
+  - Added optional `n_attn_layers` to PerturbationClassifier (TransformerEncoder after per-gene MLP)
+  - At matched 50-epoch budget, attention beats MLP: reward 0.637 vs 0.574, top-1 0.186 vs 0.142
+  - Extended eval with UMAP of output-probability vectors, per-pert reward boxplot, top-k / reward-threshold metrics
+  - See entries/2026-04-16_2330_rl_50p_attention_and_umap.md
+- [x] **Scale RL classifier to 500 HVGs x 50 perts + held-out eval + confusion matrix** — completed 2026-04-16 23:00
+  - 334-epoch run: train reward 0.84, train top-1 0.60, held-out top-1 0.43 (vs 0.02 random = 21x)
+  - Found and fixed early entropy collapse (entropy_coef 0.1 -> 0.3, lr 3e-4 -> 1e-4)
+  - New eval script scripts/eval_rl_perturbation.py produces confusion matrix + confusion-vs-reward-sim figure
+  - Errors cluster exactly at reward-degenerate pairs — model is reward-bounded, not architecturally limited
+  - See entries/2026-04-16_2300_rl_50pert_500hvg_scaleup.md
+- [x] **RL perturbation-classifier on K=64 tokens (GRPO kickoff)** — completed 2026-04-16 21:15
+  - 50-epoch training: mean reward 0.78, top-1 acc 50% (vs 10% random)
+  - New: rl_data/rl_model/rl_train modules, train_rl CLI, config, 14 tests
+  - Regenerated data/mini_perturb_seq_with_ntc.h5ad with --keep-controls
+  - See entries/2026-04-16_2115_rl_perturbation_classifier_kickoff.md
 - [x] **Quantile-grid tokenization fidelity + jitter analysis (K=64 justification)** — completed 2026-04-16 18:00
   - 300-dist fidelity sweep: K=64 captures 97% of W1 reduction, per-dist median W1 = 0.006
   - 80-pair jitter sweep: SNR reaches 5 at n~80, 10 at n~300; jitter ~ n_cells^-0.5

@@ -1,0 +1,41 @@
+# GRPO classifier + transformer attention on gene features.
+# Same as rl_perturbation_50p.yaml plus n_attn_layers=2 cross-gene attention.
+
+model:
+  grid_size: 64
+  d_embed: 48
+  d_feat: 64
+  hidden_dim: 256
+  n_attn_layers: 2
+  n_heads: 4
+
+data:
+  perturbation_key: "perturbation"
+  control_label: "control"
+  n_cells_per_pert: 100
+  n_cells_ntc: 100
+  grid_size: 64
+  min_cells: 30
+  samples_per_epoch: 300
+
+rl:
+  group_size: 50
+  kl_coef: 0.0
+  entropy_coef: 0.3
+  lr: 1.0e-4
+  weight_decay: 0.0
+  grad_clip: 1.0
+
+training:
+  epochs: 50
+  batch_size: 8
+  seed: 42
+
+reward:
+  profile_type: "delta_mean"
+
+logging:
+  print_every: 1
+  checkpoint_dir: "checkpoints/rl_perturbation_50p_attn/"
+  eval_dir: "eval_results/rl_perturbation_50p_attn/"
+  wandb: false

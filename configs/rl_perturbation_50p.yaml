@@ -1,0 +1,38 @@
+# GRPO training config for 50-perturbation classification on 500 HVGs.
+
+model:
+  grid_size: 64
+  d_embed: 48
+  d_feat: 64
+  hidden_dim: 256
+
+data:
+  perturbation_key: "perturbation"
+  control_label: "control"
+  n_cells_per_pert: 100
+  n_cells_ntc: 100
+  grid_size: 64
+  min_cells: 30
+  samples_per_epoch: 2500   # 50 perts * 50 appearances per epoch
+
+rl:
+  group_size: 50            # full enumeration over all 50 classes
+  kl_coef: 0.0
+  entropy_coef: 0.1         # higher — initial entropy is log(50) ~= 3.9
+  lr: 3.0e-4
+  weight_decay: 0.0
+  grad_clip: 1.0
+
+training:
+  epochs: 30
+  batch_size: 8
+  seed: 42
+
+reward:
+  profile_type: "delta_mean"
+
+logging:
+  print_every: 1
+  checkpoint_dir: "checkpoints/rl_perturbation_50p/"
+  eval_dir: "eval_results/rl_perturbation_50p/"
+  wandb: false
