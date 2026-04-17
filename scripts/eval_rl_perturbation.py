@@ -515,11 +515,12 @@ def plot_soft_accuracy_curve(
                edgecolor="black", zorder=5, linewidth=1.2,
                label=f"τ=0.9 headline: {headline:.3f}")
 
-    ax.set_xlabel("reward threshold τ  (cos-sim of delta-mean profiles)")
+    metric_label = metric if metric != "cosine" else "cos-sim"
+    ax.set_xlabel(f"reward threshold τ  ({metric_label} of delta-mean profiles)")
     ax.set_ylabel("P(per-trial reward ≥ τ)")
     ax.set_title(
         "Soft accuracy: did the model pick a perturbation within the reward ball?\n"
-        "τ=0.9 ⇒ bio-equivalent; τ=0.5 ⇒ same broad class",
+        f"(reward metric: {metric})",
         loc="left", fontweight="bold",
     )
     ax.set_xlim(0.48, 1.02); ax.set_ylim(-0.02, 1.02)
