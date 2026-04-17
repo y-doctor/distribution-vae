@@ -1,0 +1,58 @@
+# 2kg HVGs x 105 single-gene perts — Pearson + NTC-baseline-hinge reward, MLP.
+# A refinement of rl_2kg_singles_mlp.yaml that swaps cos-sim → Pearson correlation,
+# adds a per-pert hinge at the 95th-percentile NTC-only noise baseline (any raw
+# reward below that null floor becomes 0), and bumps n_cells 100 → 200 for a
+# less noisy reward signal.
+#
+# Motivation: the raw cos-sim reward was noise-dominated at held-out time,
+# leaving a big train/val gap (0.21 → 0.04 top-1). Pearson centers the
+# profiles first so the shared "any perturbation signal" direction no longer
+# inflates baselines; the NTC-baseline hinge then zeroes out anything a
+# random NTC sample could have produced.
+
+model:
+  grid_size: 64
+  d_embed: 48
+  d_feat: 64
+  hidden_dim: 256
+  n_attn_layers: 0
+
+data:
+  perturbation_key: "perturbation"
+  control_label: "control"
+  n_cells_per_pert: 200
+  n_cells_ntc: 200
+  grid_size: 64
+  min_cells: 30
+  samples_per_epoch: 200
+  val_fraction: 0.20
+  split_seed: 123
+  singles_only: true
+
+rl:
+  group_size: 64
+  kl_coef: 0.0
+  entropy_coef: 0.3
+  lr: 1.0e-4
+  weight_decay: 0.0
+  grad_clip: 1.0
+
+training:
+  epochs: 150
+  batch_size: 8
+  seed: 42
+
+reward:
+  profile_type: "delta_mean"
+  metric: "pearson"
+  hinge: "ntc_baseline"
+  hinge_quantile: 0.95
+  hinge_K: 200
+  # hinge_n_cells defaults to data.n_cells_per_pert (200) if omitted.
+  row_normalize: false  # disabled: the hinge already provides cross-pert balance
+
+logging:
+  print_every: 1
+  checkpoint_dir: "checkpoints/rl_2kg_singles_mlp_pearson/"
+  eval_dir: "eval_results/rl_2kg_singles_mlp_pearson/"
+  wandb: false

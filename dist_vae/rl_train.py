@@ -19,7 +19,7 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 from torch.utils.data import DataLoader
 
-from dist_vae.losses import cosine_similarity
+from dist_vae.losses import cosine_similarity, pearson_correlation
 
 
 class GRPOTrainer:
@@ -51,16 +51,46 @@ class GRPOTrainer:
         self.gene_ids = gene_ids.to(self.device)
         self.config = config
 
-        # Precompute the (P, P) pairwise reward table so we can optionally
-        # row-normalize before the trainer uses it. Row i col j = reward if
-        # true was i and we predicted j, i.e. cos-sim(profiles[i], profiles[j]).
+        # Precompute the (P, P) pairwise reward table.
+        # Row i col j = reward if true was i and we predicted j.
         reward_cfg = config.get("reward", {})
+        self.reward_metric = str(reward_cfg.get("metric", "cosine"))
         self.row_normalize = bool(reward_cfg.get("row_normalize", False))
-        R = cosine_similarity(
+        self.hinge = str(reward_cfg.get("hinge", "none"))   # "none" | "fixed" | "ntc_baseline"
+        self.hinge_value = float(reward_cfg.get("hinge_value", 0.0))
+        self.hinge_quantile = float(reward_cfg.get("hinge_quantile", 0.95))
+        self.hinge_K = int(reward_cfg.get("hinge_K", 200))
+
+        assert self.reward_metric in ("cosine", "pearson"), self.reward_metric
+        metric_fn = pearson_correlation if self.reward_metric == "pearson" else cosine_similarity
+        R = metric_fn(
             self.profiles.unsqueeze(1),   # (P, 1, G)
             self.profiles.unsqueeze(0),   # (1, P, G)
             dim=-1,
         )  # (P, P)
+
+        if self.hinge == "ntc_baseline":
+            n_cells_hinge = int(reward_cfg.get(
+                "hinge_n_cells",
+                config.get("data", {}).get("n_cells_per_pert", 100),
+            ))
+            baseline = dataset.compute_ntc_noise_baseline(
+                self.profiles.cpu(),
+                n_cells=n_cells_hinge,
+                metric=self.reward_metric,
+                K=self.hinge_K,
+                quantile=self.hinge_quantile,
+            )   # (P,)
+            self.hinge_threshold = baseline.to(self.device)
+            R = torch.where(R > self.hinge_threshold.unsqueeze(1), R, torch.zeros_like(R))
+        elif self.hinge == "fixed":
+            self.hinge_threshold = torch.full(
+                (R.shape[0],), self.hinge_value, device=R.device, dtype=R.dtype,
+            )
+            R = torch.where(R > self.hinge_value, R, torch.zeros_like(R))
+        else:
+            self.hinge_threshold = None
+
         if self.row_normalize:
             mu = R.mean(dim=1, keepdim=True)
             sd = R.std(dim=1, keepdim=True).clamp_min(1e-6)

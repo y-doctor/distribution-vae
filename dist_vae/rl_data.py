@@ -108,6 +108,8 @@ class PerturbationClassificationDataset(Dataset):
         val_fraction: float = 0.0,
         split_seed: int = 123,
         mode: str = "train",
+        return_cells: bool = False,
+        singles_only: bool = False,
     ) -> None:
         """See class docstring.
 
@@ -120,6 +122,12 @@ class PerturbationClassificationDataset(Dataset):
             mode: "train" samples from the train pool; "val" samples from the
                 val pool. Passes silently when val_fraction == 0 (always
                 "train").
+            return_cells: If True, ``__getitem__`` returns raw (n_cells, G)
+                cell matrices instead of (G, K) quantile tokens. Used by the
+                per-cell set-transformer classifier in ``rl_cell_model``.
+            singles_only: If True, drop perts whose name contains ``_``
+                (paired / combo perts in the Norman 2019 dual-CRISPRa
+                convention). Leaves singles + the control NTC pool.
         """
         super().__init__()
         self.n_cells_per_pert = n_cells_per_pert
@@ -131,6 +139,7 @@ class PerturbationClassificationDataset(Dataset):
         self.split_seed = split_seed
         assert mode in ("train", "val"), f"mode must be train or val, got {mode}"
         self.mode = mode
+        self.return_cells = return_cells
 
         pert_col = adata.obs[perturbation_key].astype(str)
         is_control = pert_col.str.lower().str.contains(control_label.lower())
@@ -142,7 +151,10 @@ class PerturbationClassificationDataset(Dataset):
 
         pert_counts = pert_col[~is_control].value_counts()
         valid_perts = pert_counts[pert_counts >= min_cells].index.tolist()
+        if singles_only:
+            valid_perts = [p for p in valid_perts if "_" not in p]
         self.perturbation_names = sorted(valid_perts)
+        self.singles_only = singles_only
 
         X = adata.X
         if sp.issparse(X):
@@ -205,6 +217,9 @@ class PerturbationClassificationDataset(Dataset):
         pert_sub = torch.from_numpy(pert_mat[pert_idx_cells]).float()  # (n_p, G)
         ntc_sub = torch.from_numpy(ntc_mat[ntc_idx_cells]).float()     # (n_n, G)
 
+        if self.return_cells:
+            return ntc_sub, pert_sub, int(pert_idx)
+
         # Per-gene tokens: transpose to (G, n_cells) then tokenize batched.
         pert_tokens = samples_to_quantile_grid(pert_sub.T, self.grid_size)
         ntc_tokens = samples_to_quantile_grid(ntc_sub.T, self.grid_size)
@@ -223,3 +238,61 @@ class PerturbationClassificationDataset(Dataset):
         for i, cells in enumerate(self._pert_cells_full):
             profiles[i] = cells.mean(axis=0) - ntc_mean
         return torch.from_numpy(profiles)
+
+    def compute_ntc_noise_baseline(
+        self,
+        profiles: torch.Tensor,
+        n_cells: int,
+        metric: str = "pearson",
+        K: int = 200,
+        quantile: float = 0.95,
+        seed: int = 42,
+    ) -> torch.Tensor:
+        """Per-pert correlation floor from NTC-only "noise" pseudo-profiles.
+
+        For each true pert i with profile ``profiles[i]``:
+            1. Draw K independent subsamples of ``n_cells`` NTC cells.
+            2. Form pseudo-profiles ``pseudo_k = mean(ntc_subsample_k) -
+               mean(all_ntc)`` — a noise-only "delta".
+            3. Correlate each pseudo-profile with ``profiles[i]`` under the
+               requested metric.
+            4. Take the ``quantile`` of that K-sized null distribution.
+
+        Returned shape: ``(P,)`` — per-pert floor such that any predicted
+        pert j with ``metric(profiles[i], profiles[j]) <= baseline[i]`` is
+        indistinguishable from "predicting NTC pretending to be i."
+
+        Args:
+            profiles: (P, G) delta-mean profile table.
+            n_cells: Number of NTC cells per subsample (match training n_cells_*).
+            metric: "pearson" or "cosine".
+            K: Number of subsamples (null size).
+            quantile: Quantile of the null (0.95 = one-tailed 5% threshold).
+            seed: RNG seed for reproducibility.
+        """
+        from dist_vae.losses import cosine_similarity, pearson_correlation
+
+        assert metric in ("pearson", "cosine"), metric
+        metric_fn = pearson_correlation if metric == "pearson" else cosine_similarity
+
+        ntc = self._ntc_cells_full                           # (N, G)
+        N = ntc.shape[0]
+        if N < n_cells:
+            raise ValueError(
+                f"Need {n_cells} NTC cells per subsample but pool has only {N}."
+            )
+        ntc_mean = ntc.mean(axis=0, keepdims=True)           # (1, G)
+        rng = np.random.default_rng(seed)
+        pseudo = np.zeros((K, ntc.shape[1]), dtype=np.float32)
+        for k in range(K):
+            idx = rng.choice(N, size=n_cells, replace=False)
+            pseudo[k] = ntc[idx].mean(axis=0) - ntc_mean[0]   # (G,)
+        pseudo_t = torch.from_numpy(pseudo)                   # (K, G)
+
+        # (P, 1, G) vs (1, K, G) -> (P, K)
+        corr = metric_fn(
+            profiles.unsqueeze(1),
+            pseudo_t.unsqueeze(0),
+            dim=-1,
+        )
+        return torch.quantile(corr, q=float(quantile), dim=1)

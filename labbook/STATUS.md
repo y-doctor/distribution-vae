@@ -17,6 +17,7 @@
 - **Cross-gene transformer attention** — optional `n_attn_layers` on `PerturbationClassifier`. 50-epoch A/B: at matched budget attention gives reward 0.64 vs MLP 0.57, top-1 0.19 vs 0.14 — attention is still climbing at ep 50. Full eval includes UMAP of prediction vectors (per-pert clusters + bio-equiv groups), per-pert reward boxplot, and top-k / reward-threshold summary metrics. See `configs/rl_perturbation_50p_attn.yaml`, `eval_results/rl_perturbation_50p_attn/`. At 300 epochs attention overfits: train reward 0.83, held-out 0.72 (tied with MLP).
 - **Full scale: 2k HVGs x 236 perts with held-out cell split + test-time ensembling** — 150-epoch MLP. Train-cell mean reward 0.812, held-out (val-cell) 0.718 with 10x ensemble 0.729. Ensembling contributes +0.011 reward / +0.015 top-1. See `data/mini_perturb_seq_2kg_allp_ntc.h5ad`, `configs/rl_perturbation_2kg_allp.yaml`, `eval_results/rl_perturbation_2kg_allp/`.
 - **Row-normalized reward** — pre-z-score each row of the (P, P) reward table before GRPO. Train top-1 0.42 → 0.51 (+8.5pp); held-out top-10 0.38 → 0.46 (+7.1pp, ens=1); P(reward >= 0.9) 0.33 → 0.38 (ens=1). Recommended default. `configs/rl_perturbation_2kg_allp_rownorm.yaml`, `eval_results/rl_perturbation_2kg_allp_rownorm/`.
+- **Per-cell set-transformer classifier (rl_cell)** — `dist_vae/rl_cell_model.py`. Raw-cells in, K=16 learned gene modules, 2-layer cell self-attn + 2-layer pert→NTC cross-attn + CLS pool. 150-ep 500g/50p held-out: top-1 0.36, P(r≥0.9) 0.46, top-10 0.78 (ens=10). Trained in ~13 min on CPU. See `eval_results/rl_cell_50p/val_ens10/`.
 - Package installable via `pip install -e ".[dev]"`
 - All 61 tests pass on CPU
 
@@ -31,7 +32,7 @@
 - Only tested on mini Norman (100 genes, 10 perturbations) — needs full-scale validation
 
 ## What's in progress
-- None. RL perturbation-classifier work merged into `main` on 2026-04-17. Previous autoresearch task dormant.
+- Per-cell set-transformer classifier (`dist_vae/rl_cell_model.py`) — 50p/500g 150-epoch run converged cleanly. Held-out P(r≥0.9)=0.46 (ens=10), top-1=0.36. Competitive with the MLP baseline at half the training budget. See entries/2026-04-17_1540_cell_set_tf_50p_150ep_results.md.
 
 ## Next priorities
 1. Consider changing `grid_size` default 256 -> 64 in dist_vae/data.py
@@ -43,6 +44,7 @@
 ## What's in the repo (data files)
 - `data/synthetic_2k.h5ad` — 2000 synthetic distributions (2.1 MB, committed)
 - `data/mini_perturb_seq.h5ad` — Mini Norman 2019: 9452 cells x 100 genes x 10 perts (4.6 MB, committed)
+- `data/mini_perturb_seq_2kg_allp_ntc.h5ad` — 2000 HVGs × all 236 perts, with NTC (gitignored, ~100 MB). Rebuild with `python scripts/download_2kg_data.py`.
 
 ## Eval results
 - `eval_results/real_1k_epochs/` — Baseline: beta=0.01, d=32, 1000 epochs (COLLAPSED)

@@ -57,6 +57,20 @@ eval_results/*
 !eval_results/rl_perturbation_2kg_allp_rownorm/
 !eval_results/rl_perturbation_2kg_allp_rownorm/val_ens1/
 !eval_results/rl_perturbation_2kg_allp_rownorm/val_ens10/
+!eval_results/rl_cell_50p/
+!eval_results/rl_cell_50p/val_ens1/
+!eval_results/rl_cell_50p/val_ens10/
+!eval_results/rl_2kg_singles_mlp/
+!eval_results/rl_2kg_singles_mlp/val_ens1/
+!eval_results/rl_2kg_singles_mlp/val_ens10/
+!eval_results/rl_2kg_singles_mlp_pearson/
+!eval_results/rl_2kg_singles_mlp_pearson/val_ens1/
+!eval_results/rl_2kg_singles_mlp_pearson/val_ens10/
+
+# Allow the full training log in rl_cell_50p (overrides *.log rule)
+!eval_results/rl_cell_50p/full_run_150ep.log
+!eval_results/rl_2kg_singles_mlp/full_run.log
+!eval_results/rl_2kg_singles_mlp_pearson/full_run.log
 
 # Download cache artifacts
 https:/

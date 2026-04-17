@@ -96,3 +96,127 @@ def test_gene_vocab_shapes(tiny_adata):
     assert len(vocab.pert_target_gene_ids) == 3
     for ids in vocab.pert_target_gene_ids:
         assert all(0 <= i < len(vocab.names) for i in ids)
+
+
+def test_dataset_return_cells_shapes(tiny_adata):
+    """return_cells=True must return raw (n_cells, G) tensors."""
+    ds = PerturbationClassificationDataset(
+        tiny_adata,
+        n_cells_per_pert=20,
+        n_cells_ntc=25,
+        grid_size=32,
+        samples_per_epoch=8,
+        min_cells=10,
+        return_cells=True,
+    )
+    G = tiny_adata.shape[1]
+    for i in range(4):
+        ntc, pert, pert_idx = ds[i]
+        assert ntc.shape == (25, G), f"ntc shape {tuple(ntc.shape)}"
+        assert pert.shape == (20, G), f"pert shape {tuple(pert.shape)}"
+        assert 0 <= pert_idx < len(ds.perturbation_names)
+        assert ntc.dtype == torch.float32
+        assert pert.dtype == torch.float32
+
+
+def test_dataset_return_cells_resampling(tiny_adata):
+    """Resampling must give different cells on repeat accesses (not cached)."""
+    ds = PerturbationClassificationDataset(
+        tiny_adata,
+        n_cells_per_pert=10,
+        n_cells_ntc=10,
+        samples_per_epoch=8,
+        min_cells=10,
+        return_cells=True,
+    )
+    _, pert_a, _ = ds[0]
+    _, pert_b, _ = ds[0 + len(ds.perturbation_names)]   # same pert, new subsample
+    assert not torch.equal(pert_a, pert_b), (
+        "re-drawn cells should differ"
+    )
+
+
+def test_dataset_return_cells_default_is_tokens(tiny_adata):
+    """Default (no flag) still returns quantile tokens — backward compatible."""
+    ds = PerturbationClassificationDataset(
+        tiny_adata,
+        n_cells_per_pert=10,
+        n_cells_ntc=10,
+        grid_size=32,
+        samples_per_epoch=4,
+        min_cells=10,
+    )
+    ntc, pert, _ = ds[0]
+    G = tiny_adata.shape[1]
+    assert ntc.shape == (G, 32), f"expected (G, K), got {tuple(ntc.shape)}"
+    assert pert.shape == (G, 32)
+
+
+def test_singles_only_filters_paired_perts():
+    """singles_only drops perts containing '_' in name."""
+    rng = np.random.default_rng(0)
+    n_ctrl = 400
+    n_per_pert = 150
+    gene_names = [f"G{i:02d}" for i in range(20)]
+    perts = ["control", "A", "B", "A_B", "C_D"]
+    rows, pert_labels = [], []
+    for p in perts:
+        n = n_ctrl if p == "control" else n_per_pert
+        rows.append(rng.normal(size=(n, 20)))
+        pert_labels.extend([p] * n)
+    X = np.concatenate(rows, axis=0).astype(np.float32)
+    obs = pd.DataFrame({"perturbation": pert_labels})
+    var = pd.DataFrame(index=gene_names)
+    adata = ad.AnnData(X=X, obs=obs, var=var)
+
+    ds_all = PerturbationClassificationDataset(
+        adata, samples_per_epoch=4, min_cells=10,
+    )
+    assert set(ds_all.perturbation_names) == {"A", "B", "A_B", "C_D"}
+
+    ds_singles = PerturbationClassificationDataset(
+        adata, samples_per_epoch=4, min_cells=10, singles_only=True,
+    )
+    assert set(ds_singles.perturbation_names) == {"A", "B"}
+
+
+def test_ntc_noise_baseline_shape_and_range(tiny_adata):
+    """Per-pert NTC-noise baseline returns (P,) values in [-1, 1]."""
+    ds = PerturbationClassificationDataset(
+        tiny_adata, samples_per_epoch=4, min_cells=10,
+    )
+    profiles = ds.compute_delta_mean_profiles()
+    P = profiles.shape[0]
+    baseline = ds.compute_ntc_noise_baseline(
+        profiles, n_cells=50, metric="pearson", K=30, quantile=0.95, seed=0,
+    )
+    assert baseline.shape == (P,)
+    assert (baseline >= -1.0).all() and (baseline <= 1.0).all()
+
+
+def test_ntc_noise_baseline_quantile_monotone(tiny_adata):
+    """Higher quantile should give a higher threshold (monotonic)."""
+    ds = PerturbationClassificationDataset(
+        tiny_adata, samples_per_epoch=4, min_cells=10,
+    )
+    profiles = ds.compute_delta_mean_profiles()
+    b50 = ds.compute_ntc_noise_baseline(
+        profiles, n_cells=50, K=60, quantile=0.5, seed=0,
+    )
+    b95 = ds.compute_ntc_noise_baseline(
+        profiles, n_cells=50, K=60, quantile=0.95, seed=0,
+    )
+    assert (b95 >= b50).all(), f"b95={b95}, b50={b50}"
+
+
+def test_ntc_noise_baseline_pearson_vs_cosine(tiny_adata):
+    """Both metrics run and return finite (P,) tensors."""
+    ds = PerturbationClassificationDataset(
+        tiny_adata, samples_per_epoch=4, min_cells=10,
+    )
+    profiles = ds.compute_delta_mean_profiles()
+    for metric in ("pearson", "cosine"):
+        b = ds.compute_ntc_noise_baseline(
+            profiles, n_cells=50, metric=metric, K=30, seed=0,
+        )
+        assert torch.isfinite(b).all(), metric

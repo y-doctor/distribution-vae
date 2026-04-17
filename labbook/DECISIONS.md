@@ -85,3 +85,19 @@
 **Decision**: Create `autoresearch/` directory following Karpathy's autoresearch pattern: single mutable file (train.py), fixed evaluation infrastructure (prepare.py), agent instructions (program.md), git-based experiment tracking.
 **Alternatives considered**: Extend existing hyperopt module (too constrained — only tunes hyperparameters, not architecture), custom experiment framework (over-engineering)
 **Rationale**: The autoresearch pattern is simple and proven. Single-file modification keeps diffs reviewable. Fixed time budget (5 min) makes experiments comparable. Git commits as experiment tracker — keep on improvement, reset on failure. Agent can modify anything: architecture, losses, optimizer, training loop.
+
+## [2026-04-17] Per-cell set-transformer classifier with learned gene modules
+**Context**: The quantile-grid classifier (`rl_model.PerturbationClassifier`) collapses each pert's cell population into a single K=64 quantile summary per gene before doing any learning. This throws away (a) per-cell heterogeneity (bimodal / subpopulation responses) and (b) per-cell matching to specific NTC baselines. The ball-plot analysis shows the remaining headroom lives in "isolated perts" — perts with no bio-equivalent neighbors and noisy signal — where population-level summaries may hide the signal.
+**Decision**: Build a parallel classifier that operates on raw cells:
+1. Each cell's (G,) expression vector is mapped through cross-attention from K learned "module queries" into K gene tokens `(g_emb * expr)`. Output per cell: (K, d) module activations. Discovered modules are soft, learned, interpretable.
+2. Pool modules to (d,) per cell and add a pert-type vs ntc-type embedding.
+3. Self-attend cells within each stream (pert, ntc).
+4. Cross-attend: pert-cell queries attend to NTC-cell key/values, preserving per-cell NTC-baseline matching (not a global summary subtraction).
+5. Pool via a learned CLS query and classify to (P,) logits.
+**Alternatives considered**:
+- **Profile-space prediction head** (predict (G,) profile, score via cos-sim to pert-profile table): rejected by director — predicting a 2k expression vector is harder than needed, and the end use is "pick a pert to make," which wants a categorical head.
+- **Gene-target attention bias** (use `pert_target_gene_ids` as attention prior toward the perturbed gene): rejected — the model would learn to cue off "is the target gene down?" instead of the downstream transcriptomic cascade we care about. Information-leak.
+- **Strictly additive hybrid**: keep quantile-grid path, bolt on the cell path, concat before head. Safer but harder to attribute wins. Deferred.
+- **Simple linear 2000→128 projection before set transformer**: the learned-modules variant replaces this with parameter-efficient, interpretable attention at ~similar cost.
+**Rationale**: A set transformer preserves subpopulation structure that quantile grids smooth away. Cross-attention to NTC gives per-cell baseline matching that global NTC subtraction can't. Learned gene modules replace brittle linear dim-reduction with soft, interpretable clustering. Expected to help most on the "isolated perts" failure mode identified by the reward-ball analysis (`eval_results/rl_perturbation_2kg_allp_rownorm/val_ens10/pert_neighborhoods_worst.png`).
+**Files**: `dist_vae/rl_cell_model.py`, `dist_vae/rl_cell_data.py`, `configs/rl_cell_*.yaml`, `scripts/train_rl_cell.py`, `tests/test_rl_cell_model.py`, `tests/test_rl_cell_data.py`. GRPOTrainer is reused as-is — the new (dataset, model) pair match its existing interface.
