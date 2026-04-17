@@ -1,0 +1,45 @@
+# 2kg HVGs x 105 single-gene perts, row-normalized reward, MLP quantile-grid model.
+# A/B head-to-head partner for configs/rl_cell_2kg_singles.yaml — same data,
+# same splits, same reward, different classifier architecture.
+
+model:
+  grid_size: 64
+  d_embed: 48
+  d_feat: 64
+  hidden_dim: 256
+  n_attn_layers: 0
+
+data:
+  perturbation_key: "perturbation"
+  control_label: "control"
+  n_cells_per_pert: 100
+  n_cells_ntc: 100
+  grid_size: 64
+  min_cells: 30
+  samples_per_epoch: 1200
+  val_fraction: 0.20
+  split_seed: 123
+  singles_only: true
+
+rl:
+  group_size: 64
+  kl_coef: 0.0
+  entropy_coef: 0.3
+  lr: 1.0e-4
+  weight_decay: 0.0
+  grad_clip: 1.0
+
+training:
+  epochs: 150
+  batch_size: 8
+  seed: 42
+
+reward:
+  profile_type: "delta_mean"
+  row_normalize: true
+
+logging:
+  print_every: 1
+  checkpoint_dir: "checkpoints/rl_2kg_singles_mlp/"
+  eval_dir: "eval_results/rl_2kg_singles_mlp/"
+  wandb: false

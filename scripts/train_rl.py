@@ -66,6 +66,7 @@ def main() -> None:
         seed=seed,
         val_fraction=val_fraction,
         split_seed=split_seed,
+        singles_only=bool(data_cfg.get("singles_only", False)),
     )
     dataset = PerturbationClassificationDataset(adata, mode="train", **ds_kwargs)
     print(
