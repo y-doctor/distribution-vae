@@ -1,7 +1,7 @@
 # Project Status
 
-**Last updated**: 2026-04-16 23:05 UTC
-**Updated by**: Session — GRPO classifier scaled to 500 HVGs x 50 perts
+**Last updated**: 2026-04-17 13:54 UTC
+**Updated by**: Session — cleanup + merge RL perturbation-classifier line into main
 
 ## What works
 - `dist_vae/losses.py` — All loss functions + CombinedDistributionLoss (47 tests pass)
@@ -31,7 +31,7 @@
 - Only tested on mini Norman (100 genes, 10 perturbations) — needs full-scale validation
 
 ## What's in progress
-- None (previous autoresearch task dormant)
+- None. RL perturbation-classifier work merged into `main` on 2026-04-17. Previous autoresearch task dormant.
 
 ## Next priorities
 1. Consider changing `grid_size` default 256 -> 64 in dist_vae/data.py
