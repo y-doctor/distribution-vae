@@ -445,6 +445,202 @@ def plot_per_pert_rewards(
     plt.close(fig)
 
 
+def _per_trial_reward(pred_bundle: dict, profiles: torch.Tensor) -> np.ndarray:
+    """Per-trial cos-sim reward between predicted and true pert profiles."""
+    profiles_np = profiles.numpy()
+    unit = profiles_np / np.linalg.norm(profiles_np, axis=1, keepdims=True).clip(min=1e-8)
+    return (unit[pred_bundle["pred_p"]] * unit[pred_bundle["true_p"]]).sum(axis=1)
+
+
+def _soft_accuracy_curve(
+    rewards: np.ndarray,
+    R_sim: np.ndarray,
+    thresholds: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute model soft-accuracy and random baseline at each threshold.
+
+    - model[i]: P(per-trial reward >= thresholds[i]).
+    - random[i]: fraction of off-diagonal reward-matrix entries >= thresholds[i],
+      i.e. the probability a uniformly-random pert lands in the reward ball.
+    """
+    model = np.array([(rewards >= t).mean() for t in thresholds])
+    P = R_sim.shape[0]
+    off = R_sim[~np.eye(P, dtype=bool)]
+    random = np.array([(off >= t).mean() for t in thresholds])
+    return model, random
+
+
+def plot_soft_accuracy_curve(
+    pred_bundle: dict,
+    profiles: torch.Tensor,
+    R_sim: np.ndarray,
+    out_path: Path,
+) -> dict:
+    """Soft-accuracy vs threshold τ — 'picked a pert within reward τ of true'."""
+    rewards = _per_trial_reward(pred_bundle, profiles)
+    thresholds = np.round(np.arange(0.50, 1.0001, 0.05), 2)
+    model, random = _soft_accuracy_curve(rewards, R_sim, thresholds)
+
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+    ax.plot(thresholds, model, color="#1f4e79", lw=2.2, marker="o",
+            ms=5, label="model")
+    ax.plot(thresholds, random, color="#888888", ls="--", lw=1.5, marker="s",
+            ms=4, label="random baseline")
+
+    idx_09 = int(np.argmin(np.abs(thresholds - 0.9)))
+    headline = model[idx_09]
+    ax.scatter([0.9], [headline], s=160, facecolor="#27ae60",
+               edgecolor="black", zorder=5, linewidth=1.2,
+               label=f"τ=0.9 headline: {headline:.3f}")
+
+    ax.set_xlabel("reward threshold τ  (cos-sim of delta-mean profiles)")
+    ax.set_ylabel("P(per-trial reward ≥ τ)")
+    ax.set_title(
+        "Soft accuracy: did the model pick a perturbation within the reward ball?\n"
+        "τ=0.9 ⇒ bio-equivalent; τ=0.5 ⇒ same broad class",
+        loc="left", fontweight="bold",
+    )
+    ax.set_xlim(0.48, 1.02); ax.set_ylim(-0.02, 1.02)
+    ax.grid(True, alpha=0.25); ax.legend(loc="lower left")
+    fig.tight_layout(); fig.savefig(out_path, dpi=180); plt.close(fig)
+
+    return {
+        "thresholds": thresholds.tolist(),
+        "model": model.tolist(),
+        "random": random.tolist(),
+        "headline_tau": 0.9,
+        "headline_value": float(headline),
+    }
+
+
+def plot_pert_neighborhoods(
+    pred_bundle: dict,
+    profiles: torch.Tensor,
+    R_sim: np.ndarray,
+    pert_names: list[str],
+    out_dir: Path,
+    tau: float = 0.9,
+    n_show: int = 20,
+) -> None:
+    """Per-pert 'reward ball' plots: best-N and worst-N perts by mean reward-to-true.
+
+    For each subject pert p, plot the PCA-2D embedding of all P pert profiles:
+      - light gray dots = all perts
+      - filled blue circles = reward-ball members (cos-sim >= τ to p)
+      - gold star = true pert p
+      - model's top-1 predictions on p's test cells overlaid as markers,
+        sized by count and colored green (in ball) / red (out of ball)
+    """
+    from sklearn.decomposition import PCA
+
+    profiles_np = profiles.numpy()
+    P = profiles_np.shape[0]
+    true_p = pred_bundle["true_p"]
+    pred_p = pred_bundle["pred_p"]
+
+    # Rank perts by mean per-trial reward to their true label.
+    rewards = _per_trial_reward(pred_bundle, profiles)
+    per_pert_mean = np.array([
+        rewards[true_p == p].mean() if (true_p == p).any() else np.nan
+        for p in range(P)
+    ])
+    finite = np.where(np.isfinite(per_pert_mean))[0]
+    order = finite[np.argsort(-per_pert_mean[finite])]
+    best = order[:n_show]
+    worst = order[-n_show:][::-1]
+
+    # PCA of pert profiles → 2D coords.
+    pca = PCA(n_components=2, random_state=0)
+    coords = pca.fit_transform(profiles_np)
+    var_exp = pca.explained_variance_ratio_
+
+    def _panel(ax: plt.Axes, p: int) -> None:
+        # Background: all perts.
+        ax.scatter(coords[:, 0], coords[:, 1], s=6, color="#dddddd",
+                   edgecolor="none", zorder=1)
+        # Reward ball members (excluding self).
+        ball = np.where(R_sim[p] >= tau)[0]
+        ball = ball[ball != p]
+        if ball.size > 0:
+            ax.scatter(coords[ball, 0], coords[ball, 1], s=22,
+                       color="#4a90d9", edgecolor="white", linewidth=0.4,
+                       zorder=3, alpha=0.85)
+        # True pert.
+        ax.scatter(coords[p, 0], coords[p, 1], s=220, marker="*",
+                   color="#f5c518", edgecolor="black", linewidth=1.0,
+                   zorder=5)
+        # Predictions for this true pert.
+        mask = true_p == p
+        if mask.any():
+            preds = pred_p[mask]
+            uniq, counts = np.unique(preds, return_counts=True)
+            for q, c in zip(uniq, counts):
+                in_ball = R_sim[p, q] >= tau
+                color = "#2ecc71" if in_ball else "#e74c3c"
+                ax.scatter(coords[q, 0], coords[q, 1],
+                           s=30 + 18 * c, marker="o",
+                           facecolor="none", edgecolor=color, linewidth=1.8,
+                           zorder=4)
+            n_in_ball = int(((R_sim[p, preds] >= tau).sum()))
+            hit_rate = n_in_ball / len(preds)
+        else:
+            hit_rate = float("nan")
+
+        ax.set_title(
+            f"{pert_names[p]}  |  mean r = {per_pert_mean[p]:.2f}  |  "
+            f"P(r≥{tau}) = {hit_rate:.2f}",
+            fontsize=8.5,
+        )
+        ax.set_xticks([]); ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_linewidth(0.4); spine.set_color("#888888")
+
+    def _grid(perts: np.ndarray, title: str, out_path: Path) -> None:
+        n_cols = 5
+        n_rows = int(np.ceil(len(perts) / n_cols))
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(3.1 * n_cols, 2.9 * n_rows))
+        axes = np.atleast_2d(axes)
+        for i, p in enumerate(perts):
+            _panel(axes[i // n_cols, i % n_cols], int(p))
+        for i in range(len(perts), n_rows * n_cols):
+            axes[i // n_cols, i % n_cols].axis("off")
+
+        # Shared legend via dummy scatter handles.
+        handles = [
+            plt.scatter([], [], s=220, marker="*", color="#f5c518",
+                        edgecolor="black", linewidth=1.0, label="true pert"),
+            plt.scatter([], [], s=22, color="#4a90d9",
+                        edgecolor="white", linewidth=0.4,
+                        label=f"reward-ball member (cos-sim ≥ {tau})"),
+            plt.scatter([], [], s=60, marker="o", facecolor="none",
+                        edgecolor="#2ecc71", linewidth=1.8,
+                        label="prediction (in ball)"),
+            plt.scatter([], [], s=60, marker="o", facecolor="none",
+                        edgecolor="#e74c3c", linewidth=1.8,
+                        label="prediction (out of ball)"),
+            plt.scatter([], [], s=6, color="#dddddd",
+                        label="other perts"),
+        ]
+        fig.legend(handles=handles, loc="lower center",
+                   ncol=5, fontsize=9, frameon=False,
+                   bbox_to_anchor=(0.5, -0.01))
+        fig.suptitle(
+            f"{title}\n"
+            f"PCA-2D of perturbation delta-mean profiles  "
+            f"(PC1 {var_exp[0]*100:.1f}%, PC2 {var_exp[1]*100:.1f}%). "
+            f"Marker size ∝ prediction count across trials.",
+            fontweight="bold", y=1.0,
+        )
+        fig.tight_layout(rect=(0, 0.03, 1, 0.98))
+        fig.savefig(out_path, dpi=180)
+        plt.close(fig)
+
+    _grid(best, f"Best-{n_show} perts by mean reward-to-true",
+          out_dir / "pert_neighborhoods_best.png")
+    _grid(worst, f"Worst-{n_show} perts by mean reward-to-true",
+          out_dir / "pert_neighborhoods_worst.png")
+
+
 def report_summary_metrics(
     pred_bundle: dict,
     profiles: torch.Tensor,
@@ -599,10 +795,24 @@ def main() -> None:
         pred_bundle, profiles, dataset.perturbation_names, out / "per_pert_rewards.png"
     )
 
+    print("Plotting soft-accuracy curve (P(reward >= tau) vs tau) ...")
+    soft_curve = plot_soft_accuracy_curve(
+        pred_bundle, profiles, R_sim, out / "soft_accuracy_curve.png"
+    )
+
+    print("Plotting per-pert reward-ball neighborhoods (best-20 + worst-20) ...")
+    plot_pert_neighborhoods(
+        pred_bundle, profiles, R_sim,
+        dataset.perturbation_names, out, tau=0.9, n_show=20,
+    )
+
     print("Computing summary metrics ...")
     summary = report_summary_metrics(
         pred_bundle, profiles, R_sim, dataset.perturbation_names, out / "metrics.json"
     )
+    summary["soft_accuracy_curve"] = soft_curve
+    with open(out / "metrics.json", "w") as f:
+        json.dump(summary, f, indent=2)
     print("== held-out metrics ==")
     for k, v in summary["top_k"].items():
         print(f"  {k}: {v:.3f}")
