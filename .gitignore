@@ -48,6 +48,7 @@ eval_results/*
 !eval_results/rl_perturbation/
 !eval_results/rl_perturbation_50p/
 !eval_results/rl_perturbation_50p_attn/
+!eval_results/rl_perturbation_50p_attn_long/
 
 # Download cache artifacts
 https:/
