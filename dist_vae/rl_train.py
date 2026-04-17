@@ -22,6 +22,45 @@ from torch.utils.data import DataLoader
 from dist_vae.losses import cosine_similarity, pearson_correlation
 
 
+def apply_hinge(
+    R: torch.Tensor,
+    threshold: torch.Tensor | float,
+    rescale: bool = False,
+) -> torch.Tensor:
+    """Apply a reward hinge.
+
+    If ``rescale`` is False (legacy): zero out entries <= threshold, keep raw
+    values above::
+
+        r_eff = R if R > theta else 0
+
+    If ``rescale`` is True: zero out entries <= threshold AND linearly map the
+    above-threshold range to [0, 1]::
+
+        r_eff = relu((R - theta) / (1 - theta))
+
+    Rescaling removes the step discontinuity at the threshold (values barely
+    above theta map to ~0, not theta) and expands the usable dynamic range so
+    group-relative advantages are less squished. Assumes R is bounded above by
+    1 (Pearson / cosine); larger thresholds would overflow the [0, 1] target.
+
+    Args:
+        R: Reward tensor.
+        threshold: Scalar or broadcast-compatible tensor.
+        rescale: Whether to linearly rescale above-threshold values to [0, 1].
+
+    Returns:
+        Hinged reward tensor, same shape as ``R``.
+    """
+    if rescale:
+        thr = threshold if isinstance(threshold, torch.Tensor) else torch.tensor(
+            threshold, dtype=R.dtype, device=R.device,
+        )
+        denom = (1.0 - thr).clamp_min(1e-6)
+        return torch.clamp((R - thr) / denom, min=0.0)
+    return torch.where(R > threshold, R, torch.zeros_like(R))
+
+
 class GRPOTrainer:
     """Group-Relative Policy Optimization trainer.
 
@@ -60,6 +99,12 @@ class GRPOTrainer:
         self.hinge_value = float(reward_cfg.get("hinge_value", 0.0))
         self.hinge_quantile = float(reward_cfg.get("hinge_quantile", 0.95))
         self.hinge_K = int(reward_cfg.get("hinge_K", 200))
+        # Multiply the threshold by this factor (e.g. 2.0 = "2x noise floor").
+        self.hinge_multiplier = float(reward_cfg.get("hinge_multiplier", 1.0))
+        # If True, map the above-threshold range linearly to [0, 1]:
+        #   r_eff = relu((r - theta) / (1 - theta))
+        # If False, keep the raw reward above threshold (legacy behavior).
+        self.hinge_rescale = bool(reward_cfg.get("hinge_rescale", False))
 
         assert self.reward_metric in ("cosine", "pearson"), self.reward_metric
         metric_fn = pearson_correlation if self.reward_metric == "pearson" else cosine_similarity
@@ -81,13 +126,14 @@ class GRPOTrainer:
                 K=self.hinge_K,
                 quantile=self.hinge_quantile,
             )   # (P,)
-            self.hinge_threshold = baseline.to(self.device)
-            R = torch.where(R > self.hinge_threshold.unsqueeze(1), R, torch.zeros_like(R))
+            self.hinge_threshold = (baseline * self.hinge_multiplier).to(self.device)
+            R = self._apply_hinge(R, self.hinge_threshold.unsqueeze(1))
         elif self.hinge == "fixed":
+            eff = self.hinge_value * self.hinge_multiplier
             self.hinge_threshold = torch.full(
-                (R.shape[0],), self.hinge_value, device=R.device, dtype=R.dtype,
+                (R.shape[0],), eff, device=R.device, dtype=R.dtype,
             )
-            R = torch.where(R > self.hinge_value, R, torch.zeros_like(R))
+            R = self._apply_hinge(R, self.hinge_threshold.unsqueeze(1))
         else:
             self.hinge_threshold = None
 
@@ -132,6 +178,11 @@ class GRPOTrainer:
         self.print_every = int(log.get("print_every", 1))
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
         self.eval_dir.mkdir(parents=True, exist_ok=True)
+
+    def _apply_hinge(
+        self, R: torch.Tensor, threshold: torch.Tensor
+    ) -> torch.Tensor:
+        return apply_hinge(R, threshold, rescale=self.hinge_rescale)
 
     def _compute_reward(
         self, actions: torch.Tensor, true_p: torch.Tensor

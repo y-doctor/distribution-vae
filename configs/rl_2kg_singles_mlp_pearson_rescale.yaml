@@ -1,0 +1,62 @@
+# 2kg HVGs x 105 single-gene perts — Pearson + NTC-baseline-hinge reward
+# with LINEAR RESCALING above the hinge, MLP.
+#
+# Refinement of rl_2kg_singles_mlp_pearson.yaml. Same Pearson + NTC-baseline
+# hinge, but above the threshold the reward is linearly mapped to [0, 1]:
+#
+#     r_eff = relu((r - theta) / (1 - theta))
+#
+# This removes the step discontinuity at theta (a prediction that barely
+# clears the noise floor now gets ~0 reward, not ~theta) and expands the
+# usable dynamic range so GRPO advantages are less squished.
+#
+# hinge_multiplier=1.0 keeps the same threshold location as the baseline
+# run; the only change vs. its predecessor is the reshape above theta.
+
+model:
+  grid_size: 64
+  d_embed: 48
+  d_feat: 64
+  hidden_dim: 256
+  n_attn_layers: 0
+
+data:
+  perturbation_key: "perturbation"
+  control_label: "control"
+  n_cells_per_pert: 200
+  n_cells_ntc: 200
+  grid_size: 64
+  min_cells: 30
+  samples_per_epoch: 200
+  val_fraction: 0.20
+  split_seed: 123
+  singles_only: true
+
+rl:
+  group_size: 64
+  kl_coef: 0.0
+  entropy_coef: 0.3
+  lr: 1.0e-4
+  weight_decay: 0.0
+  grad_clip: 1.0
+
+training:
+  epochs: 150
+  batch_size: 8
+  seed: 42
+
+reward:
+  profile_type: "delta_mean"
+  metric: "pearson"
+  hinge: "ntc_baseline"
+  hinge_quantile: 0.95
+  hinge_K: 200
+  hinge_multiplier: 1.0
+  hinge_rescale: true
+  row_normalize: false
+
+logging:
+  print_every: 1
+  checkpoint_dir: "checkpoints/rl_2kg_singles_mlp_pearson_rescale/"
+  eval_dir: "eval_results/rl_2kg_singles_mlp_pearson_rescale/"
+  wandb: false
