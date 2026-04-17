@@ -1,0 +1,44 @@
+# 10-pert smoke test config for the per-cell set-transformer classifier.
+# Uses data/mini_perturb_seq_with_ntc.h5ad (100 genes x 10 perts + NTC).
+# Goal: verify reward climbs above random in 10 epochs.
+
+model:
+  d: 32
+  n_modules: 8
+  n_cell_layers: 1
+  n_cross_layers: 1
+  n_heads: 4
+  dropout: 0.0
+
+data:
+  perturbation_key: "perturbation"
+  control_label: "control"
+  n_cells_per_pert: 40
+  n_cells_ntc: 40
+  grid_size: 64          # unused in cell mode; kept for config compatibility
+  min_cells: 30
+  samples_per_epoch: 60
+  val_fraction: 0.0
+
+rl:
+  group_size: 10         # == P for 10-pert problem, so full-enumeration GRPO
+  kl_coef: 0.0
+  entropy_coef: 0.1
+  lr: 3.0e-4
+  weight_decay: 0.0
+  grad_clip: 1.0
+
+training:
+  epochs: 10
+  batch_size: 4
+  seed: 42
+
+reward:
+  profile_type: "delta_mean"
+  row_normalize: true
+
+logging:
+  print_every: 1
+  checkpoint_dir: "checkpoints/rl_cell_mini10/"
+  eval_dir: "eval_results/rl_cell_mini10/"
+  wandb: false

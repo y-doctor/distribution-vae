@@ -18,6 +18,7 @@
 
 ## IN PROGRESS
 - [ ] Run autoresearch agent overnight — M — started 2026-03-24
+- [ ] Prototype per-cell set-transformer classifier (`dist_vae/rl_cell_model.py`) — L — started 2026-04-17 — 19 model-unit tests + 3 dataset tests pass; 10-pert smoke reward 0.29 at ep10 (random 0.10); 50-pert 20-epoch scale-up running
 
 ## RECENTLY ADDED
 - [ ] Run autoresearch agent on GPU for extended experiment session — M

@@ -1,0 +1,44 @@
+# 50-pert mid-scale config for the per-cell set-transformer classifier.
+# Uses data/mini_perturb_seq_500g_50p_ntc.h5ad (500 HVGs x 50 perts + NTC).
+# Goal: verify the architecture scales up and reward exceeds random over 30 eps.
+
+model:
+  d: 48
+  n_modules: 16
+  n_cell_layers: 2
+  n_cross_layers: 2
+  n_heads: 4
+  dropout: 0.1
+
+data:
+  perturbation_key: "perturbation"
+  control_label: "control"
+  n_cells_per_pert: 50     # 100 was learning well but slow on CPU
+  n_cells_ntc: 50
+  grid_size: 64
+  min_cells: 30
+  samples_per_epoch: 100
+  val_fraction: 0.0
+
+rl:
+  group_size: 50           # full enumeration for 50 classes
+  kl_coef: 0.0
+  entropy_coef: 0.3
+  lr: 1.0e-4
+  weight_decay: 0.0
+  grad_clip: 0.5           # tightened from 1.0: original was exploding to >30
+
+training:
+  epochs: 30
+  batch_size: 4
+  seed: 42
+
+reward:
+  profile_type: "delta_mean"
+  row_normalize: true
+
+logging:
+  print_every: 1
+  checkpoint_dir: "checkpoints/rl_cell_50p/"
+  eval_dir: "eval_results/rl_cell_50p/"
+  wandb: false

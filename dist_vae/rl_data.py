@@ -108,6 +108,7 @@ class PerturbationClassificationDataset(Dataset):
         val_fraction: float = 0.0,
         split_seed: int = 123,
         mode: str = "train",
+        return_cells: bool = False,
     ) -> None:
         """See class docstring.
 
@@ -120,6 +121,9 @@ class PerturbationClassificationDataset(Dataset):
             mode: "train" samples from the train pool; "val" samples from the
                 val pool. Passes silently when val_fraction == 0 (always
                 "train").
+            return_cells: If True, ``__getitem__`` returns raw (n_cells, G)
+                cell matrices instead of (G, K) quantile tokens. Used by the
+                per-cell set-transformer classifier in ``rl_cell_model``.
         """
         super().__init__()
         self.n_cells_per_pert = n_cells_per_pert
@@ -131,6 +135,7 @@ class PerturbationClassificationDataset(Dataset):
         self.split_seed = split_seed
         assert mode in ("train", "val"), f"mode must be train or val, got {mode}"
         self.mode = mode
+        self.return_cells = return_cells
 
         pert_col = adata.obs[perturbation_key].astype(str)
         is_control = pert_col.str.lower().str.contains(control_label.lower())
@@ -204,6 +209,9 @@ class PerturbationClassificationDataset(Dataset):
 
         pert_sub = torch.from_numpy(pert_mat[pert_idx_cells]).float()  # (n_p, G)
         ntc_sub = torch.from_numpy(ntc_mat[ntc_idx_cells]).float()     # (n_n, G)
+
+        if self.return_cells:
+            return ntc_sub, pert_sub, int(pert_idx)
 
         # Per-gene tokens: transpose to (G, n_cells) then tokenize batched.
         pert_tokens = samples_to_quantile_grid(pert_sub.T, self.grid_size)

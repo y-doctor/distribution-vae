@@ -96,3 +96,57 @@ def test_gene_vocab_shapes(tiny_adata):
     assert len(vocab.pert_target_gene_ids) == 3
     for ids in vocab.pert_target_gene_ids:
         assert all(0 <= i < len(vocab.names) for i in ids)
+
+
+def test_dataset_return_cells_shapes(tiny_adata):
+    """return_cells=True must return raw (n_cells, G) tensors."""
+    ds = PerturbationClassificationDataset(
+        tiny_adata,
+        n_cells_per_pert=20,
+        n_cells_ntc=25,
+        grid_size=32,
+        samples_per_epoch=8,
+        min_cells=10,
+        return_cells=True,
+    )
+    G = tiny_adata.shape[1]
+    for i in range(4):
+        ntc, pert, pert_idx = ds[i]
+        assert ntc.shape == (25, G), f"ntc shape {tuple(ntc.shape)}"
+        assert pert.shape == (20, G), f"pert shape {tuple(pert.shape)}"
+        assert 0 <= pert_idx < len(ds.perturbation_names)
+        assert ntc.dtype == torch.float32
+        assert pert.dtype == torch.float32
+
+
+def test_dataset_return_cells_resampling(tiny_adata):
+    """Resampling must give different cells on repeat accesses (not cached)."""
+    ds = PerturbationClassificationDataset(
+        tiny_adata,
+        n_cells_per_pert=10,
+        n_cells_ntc=10,
+        samples_per_epoch=8,
+        min_cells=10,
+        return_cells=True,
+    )
+    _, pert_a, _ = ds[0]
+    _, pert_b, _ = ds[0 + len(ds.perturbation_names)]   # same pert, new subsample
+    assert not torch.equal(pert_a, pert_b), (
+        "re-drawn cells should differ"
+    )
+
+
+def test_dataset_return_cells_default_is_tokens(tiny_adata):
+    """Default (no flag) still returns quantile tokens — backward compatible."""
+    ds = PerturbationClassificationDataset(
+        tiny_adata,
+        n_cells_per_pert=10,
+        n_cells_ntc=10,
+        grid_size=32,
+        samples_per_epoch=4,
+        min_cells=10,
+    )
+    ntc, pert, _ = ds[0]
+    G = tiny_adata.shape[1]
+    assert ntc.shape == (G, 32), f"expected (G, K), got {tuple(ntc.shape)}"
+    assert pert.shape == (G, 32)
