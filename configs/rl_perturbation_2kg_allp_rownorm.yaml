@@ -1,0 +1,43 @@
+# 2kg x 236p with ROW-NORMALIZED reward (z-score per true pert).
+# Same as rl_perturbation_2kg_allp.yaml; only reward.row_normalize differs.
+
+model:
+  grid_size: 64
+  d_embed: 48
+  d_feat: 64
+  hidden_dim: 256
+  n_attn_layers: 0
+
+data:
+  perturbation_key: "perturbation"
+  control_label: "control"
+  n_cells_per_pert: 100
+  n_cells_ntc: 100
+  grid_size: 64
+  min_cells: 30
+  samples_per_epoch: 1200
+  val_fraction: 0.20
+  split_seed: 123
+
+rl:
+  group_size: 64
+  kl_coef: 0.0
+  entropy_coef: 0.3
+  lr: 1.0e-4
+  weight_decay: 0.0
+  grad_clip: 1.0
+
+training:
+  epochs: 150
+  batch_size: 8
+  seed: 42
+
+reward:
+  profile_type: "delta_mean"
+  row_normalize: true
+
+logging:
+  print_every: 1
+  checkpoint_dir: "checkpoints/rl_perturbation_2kg_allp_rownorm/"
+  eval_dir: "eval_results/rl_perturbation_2kg_allp_rownorm/"
+  wandb: false

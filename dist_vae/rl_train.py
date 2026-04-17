@@ -51,6 +51,22 @@ class GRPOTrainer:
         self.gene_ids = gene_ids.to(self.device)
         self.config = config
 
+        # Precompute the (P, P) pairwise reward table so we can optionally
+        # row-normalize before the trainer uses it. Row i col j = reward if
+        # true was i and we predicted j, i.e. cos-sim(profiles[i], profiles[j]).
+        reward_cfg = config.get("reward", {})
+        self.row_normalize = bool(reward_cfg.get("row_normalize", False))
+        R = cosine_similarity(
+            self.profiles.unsqueeze(1),   # (P, 1, G)
+            self.profiles.unsqueeze(0),   # (1, P, G)
+            dim=-1,
+        )  # (P, P)
+        if self.row_normalize:
+            mu = R.mean(dim=1, keepdim=True)
+            sd = R.std(dim=1, keepdim=True).clamp_min(1e-6)
+            R = (R - mu) / sd
+        self.reward_table = R.to(self.device)
+
         rl = config["rl"]
         train = config["training"]
         self.group_size = int(rl.get("group_size", 4))
@@ -90,10 +106,11 @@ class GRPOTrainer:
     def _compute_reward(
         self, actions: torch.Tensor, true_p: torch.Tensor
     ) -> torch.Tensor:
-        """(B, G) -> (B, G) cosine-sim rewards against delta-mean profiles."""
-        pred_profile = self.profiles[actions]          # (B, G, n_genes)
-        true_profile = self.profiles[true_p][:, None, :]  # (B, 1, n_genes)
-        return cosine_similarity(pred_profile, true_profile, dim=-1)
+        """(B, G) -> (B, G) reward from the (optionally row-normalized) table.
+
+        reward[b, g] = reward_table[true_p[b], actions[b, g]]
+        """
+        return self.reward_table[true_p[:, None], actions]
 
     def _kl_to_ref(self, logits: torch.Tensor) -> torch.Tensor:
         """KL( current_policy || ref_policy ), scalar."""
