@@ -91,13 +91,19 @@ def compute_predictions(
     model: PerturbationClassifier,
     dataset: PerturbationClassificationDataset,
     R: int = 20,
+    n_ensemble: int = 1,
     device: str = "cpu",
 ) -> dict:
     """For each (pert, repeat) sample the model and collect logits + predictions.
 
+    Args:
+        n_ensemble: if > 1, each "trial" averages the model's logits across
+            n_ensemble independent 100-cell subsamples before argmax. This
+            is the test-time ensembling lever.
+
     Returns a dict with keys:
       - confusion: (P, P) int64 confusion counts, argmax predictions.
-      - logits:    (P*R, P) float32 raw logits per trial.
+      - logits:    (P*R, P) float32 ensembled logits per trial.
       - probs:     (P*R, P) softmax probabilities per trial.
       - true_p:    (P*R,) int64 true pert index per trial.
       - pred_p:    (P*R,) int64 argmax prediction per trial.
@@ -123,20 +129,24 @@ def compute_predictions(
         for true_p in range(P):
             pert_mat = pert_cells[true_p]
             for _ in range(R):
-                pi = rng.choice(pert_mat.shape[0], size=min(n_p, pert_mat.shape[0]), replace=False)
-                ni = rng.choice(ntc_cells.shape[0], size=min(n_n, ntc_cells.shape[0]), replace=False)
-                p_sub = torch.from_numpy(pert_mat[pi]).float()
-                n_sub = torch.from_numpy(ntc_cells[ni]).float()
-                p_tok = samples_to_quantile_grid(p_sub.T, dataset.grid_size)
-                n_tok = samples_to_quantile_grid(n_sub.T, dataset.grid_size)
-                logits = model(
-                    n_tok.unsqueeze(0).to(device),
-                    p_tok.unsqueeze(0).to(device),
-                    gene_ids,
-                ).squeeze(0)
-                pred = int(logits.argmax(dim=-1).item())
+                ens_logits = np.zeros(P, dtype=np.float32)
+                for _e in range(n_ensemble):
+                    pi = rng.choice(pert_mat.shape[0], size=min(n_p, pert_mat.shape[0]), replace=False)
+                    ni = rng.choice(ntc_cells.shape[0], size=min(n_n, ntc_cells.shape[0]), replace=False)
+                    p_sub = torch.from_numpy(pert_mat[pi]).float()
+                    n_sub = torch.from_numpy(ntc_cells[ni]).float()
+                    p_tok = samples_to_quantile_grid(p_sub.T, dataset.grid_size)
+                    n_tok = samples_to_quantile_grid(n_sub.T, dataset.grid_size)
+                    logits = model(
+                        n_tok.unsqueeze(0).to(device),
+                        p_tok.unsqueeze(0).to(device),
+                        gene_ids,
+                    ).squeeze(0)
+                    ens_logits += logits.cpu().numpy()
+                ens_logits /= max(n_ensemble, 1)
+                pred = int(np.argmax(ens_logits))
                 C[true_p, pred] += 1
-                all_logits[row] = logits.cpu().numpy()
+                all_logits[row] = ens_logits
                 all_true[row] = true_p
                 all_pred[row] = pred
                 row += 1
@@ -328,7 +338,7 @@ def plot_umap_predictions(
                 bbox=dict(facecolor="white", edgecolor="none", alpha=0.55, pad=0.5),
             )
     axes[0].set_title(
-        "UMAP of model-output probability vectors (50 perts, R=30 trials each)\n"
+        f"UMAP of model-output probability vectors ({P} perts, R={probs.shape[0]//P} trials each)\n"
         "colored by TRUE perturbation — trials from the same pert should cluster",
         loc="left",
     )
@@ -497,6 +507,19 @@ def main() -> None:
     parser.add_argument("--n-repeats", type=int, default=20)
     parser.add_argument("--grid-size", type=int, default=64)
     parser.add_argument("--n-cells", type=int, default=100)
+    parser.add_argument(
+        "--n-ensemble", type=int, default=1,
+        help="Test-time ensembling: average logits over N fresh subsamples per trial.",
+    )
+    parser.add_argument(
+        "--val-fraction", type=float, default=0.0,
+        help="If > 0, eval on the held-out cells (val split) from the training-time config.",
+    )
+    parser.add_argument("--split-seed", type=int, default=123)
+    parser.add_argument(
+        "--mode", type=str, default="val", choices=["train", "val"],
+        help="With --val-fraction > 0, which split to eval on.",
+    )
     args = parser.parse_args()
 
     _set_style()
@@ -511,7 +534,14 @@ def main() -> None:
         n_cells_ntc=args.n_cells,
         grid_size=args.grid_size,
         samples_per_epoch=32,
+        val_fraction=args.val_fraction,
+        split_seed=args.split_seed,
+        mode=args.mode if args.val_fraction > 0 else "train",
     )
+    if args.val_fraction > 0:
+        print(f"  evaluating on {args.mode} split (val_fraction={args.val_fraction})")
+        print(f"  pool sizes — pert0: {dataset._pert_cells[0].shape[0]} (full {dataset._pert_cells_full[0].shape[0]})")
+        print(f"               NTC:   {dataset._ntc_cells.shape[0]} (full {dataset._ntc_cells_full.shape[0]})")
     P = len(dataset.perturbation_names)
     print(f"  {P} perts, {len(dataset.vocab.names)} genes in vocab")
 
@@ -537,8 +567,10 @@ def main() -> None:
     print(f"  checkpoint from epoch {ckpt['epoch']}, "
           f"train-time mean reward = {ckpt['metrics']['mean_reward']:.4f}")
 
-    print(f"Computing predictions (R={args.n_repeats} subsamples/pert) ...")
-    pred_bundle = compute_predictions(model, dataset, R=args.n_repeats)
+    print(f"Computing predictions (R={args.n_repeats} trials/pert, n_ensemble={args.n_ensemble}) ...")
+    pred_bundle = compute_predictions(
+        model, dataset, R=args.n_repeats, n_ensemble=args.n_ensemble
+    )
     C = pred_bundle["confusion"]
 
     top1 = np.diag(C / C.sum(axis=1, keepdims=True).clip(min=1)).mean()

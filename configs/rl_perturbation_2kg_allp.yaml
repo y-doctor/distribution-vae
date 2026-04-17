@@ -1,0 +1,42 @@
+# GRPO classifier on full Norman: 2000 HVGs x ~237 perturbations, 20% cell holdout.
+# MLP architecture (baseline — no attention; we're testing data lever now).
+
+model:
+  grid_size: 64
+  d_embed: 48
+  d_feat: 64
+  hidden_dim: 256
+  n_attn_layers: 0
+
+data:
+  perturbation_key: "perturbation"
+  control_label: "control"
+  n_cells_per_pert: 100
+  n_cells_ntc: 100
+  grid_size: 64
+  min_cells: 30
+  samples_per_epoch: 1200   # ~5 appearances per pert per epoch at 237 perts
+  val_fraction: 0.20
+  split_seed: 123
+
+rl:
+  group_size: 64            # sampled (not full enum since P~237)
+  kl_coef: 0.0
+  entropy_coef: 0.3
+  lr: 1.0e-4
+  weight_decay: 0.0
+  grad_clip: 1.0
+
+training:
+  epochs: 150
+  batch_size: 8
+  seed: 42
+
+reward:
+  profile_type: "delta_mean"
+
+logging:
+  print_every: 1
+  checkpoint_dir: "checkpoints/rl_perturbation_2kg_allp/"
+  eval_dir: "eval_results/rl_perturbation_2kg_allp/"
+  wandb: false

@@ -105,13 +105,32 @@ class PerturbationClassificationDataset(Dataset):
         min_cells: int = 30,
         samples_per_epoch: int = 1000,
         seed: int = 42,
+        val_fraction: float = 0.0,
+        split_seed: int = 123,
+        mode: str = "train",
     ) -> None:
+        """See class docstring.
+
+        Additional args (held-out cell split):
+            val_fraction: If > 0, reserve this fraction of each pert's cells
+                (and NTC cells) for a held-out evaluation pool. Deterministic
+                given split_seed.
+            split_seed: Seed for the train/val cell split (shared between
+                train and val datasets so they partition the same cells).
+            mode: "train" samples from the train pool; "val" samples from the
+                val pool. Passes silently when val_fraction == 0 (always
+                "train").
+        """
         super().__init__()
         self.n_cells_per_pert = n_cells_per_pert
         self.n_cells_ntc = n_cells_ntc
         self.grid_size = grid_size
         self.samples_per_epoch = samples_per_epoch
         self.seed = seed
+        self.val_fraction = val_fraction
+        self.split_seed = split_seed
+        assert mode in ("train", "val"), f"mode must be train or val, got {mode}"
+        self.mode = mode
 
         pert_col = adata.obs[perturbation_key].astype(str)
         is_control = pert_col.str.lower().str.contains(control_label.lower())
@@ -130,12 +149,37 @@ class PerturbationClassificationDataset(Dataset):
             X = X.toarray()
         X = np.asarray(X, dtype=np.float32)
 
-        # Pre-densify per pert and the NTC pool once.
+        # Pre-densify per pert and the NTC pool once. Always keep the FULL
+        # (un-split) cell arrays for oracle profile computation; the
+        # sampling pool (self._pert_cells / self._ntc_cells) is the split subset.
+        split_rng = np.random.default_rng(split_seed)
+        self._pert_cells_full: list[np.ndarray] = []
         self._pert_cells: list[np.ndarray] = []
         for p in self.perturbation_names:
             mask = (pert_col == p).values
-            self._pert_cells.append(X[mask])
-        self._ntc_cells: np.ndarray = X[is_control.values]
+            cells = X[mask]
+            self._pert_cells_full.append(cells)
+            if val_fraction > 0.0:
+                idx = split_rng.permutation(cells.shape[0])
+                n_val = max(1, int(round(val_fraction * cells.shape[0])))
+                if mode == "train":
+                    cells = cells[idx[n_val:]]
+                else:
+                    cells = cells[idx[:n_val]]
+            self._pert_cells.append(cells)
+
+        ntc_full = X[is_control.values]
+        self._ntc_cells_full: np.ndarray = ntc_full
+        if val_fraction > 0.0:
+            idx = split_rng.permutation(ntc_full.shape[0])
+            n_val = max(1, int(round(val_fraction * ntc_full.shape[0])))
+            if mode == "train":
+                ntc_split = ntc_full[idx[n_val:]]
+            else:
+                ntc_split = ntc_full[idx[:n_val]]
+        else:
+            ntc_split = ntc_full
+        self._ntc_cells: np.ndarray = ntc_split
 
         self.gene_names = list(adata.var_names)
         self.vocab = _build_gene_vocabulary(
@@ -168,9 +212,14 @@ class PerturbationClassificationDataset(Dataset):
         return ntc_tokens, pert_tokens, int(pert_idx)
 
     def compute_delta_mean_profiles(self) -> torch.Tensor:
-        """Return (P, n_expression_genes) delta-mean reward profile tensor."""
-        ntc_mean = self._ntc_cells.mean(axis=0)  # (G,)
+        """Return (P, n_expression_genes) delta-mean reward profile tensor.
+
+        Uses the FULL un-split cell pools to give an oracle estimate that
+        does not depend on the train/val split. The profile is a property of
+        the perturbation's effect, not of the training data.
+        """
+        ntc_mean = self._ntc_cells_full.mean(axis=0)  # (G,)
         profiles = np.zeros((len(self.perturbation_names), ntc_mean.shape[0]), dtype=np.float32)
-        for i, cells in enumerate(self._pert_cells):
+        for i, cells in enumerate(self._pert_cells_full):
             profiles[i] = cells.mean(axis=0) - ntc_mean
         return torch.from_numpy(profiles)

@@ -49,6 +49,11 @@ eval_results/*
 !eval_results/rl_perturbation_50p/
 !eval_results/rl_perturbation_50p_attn/
 !eval_results/rl_perturbation_50p_attn_long/
+!eval_results/rl_perturbation_2kg_allp/
+!eval_results/rl_perturbation_2kg_allp/train_ens1/
+!eval_results/rl_perturbation_2kg_allp/val_ens1/
+!eval_results/rl_perturbation_2kg_allp/val_ens5/
+!eval_results/rl_perturbation_2kg_allp/val_ens10/
 
 # Download cache artifacts
 https:/

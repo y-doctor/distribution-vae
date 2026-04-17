@@ -53,8 +53,9 @@ def main() -> None:
     print(f"  {adata.n_obs} cells x {adata.n_vars} genes")
 
     data_cfg = config.get("data", {})
-    dataset = PerturbationClassificationDataset(
-        adata,
+    val_fraction = float(data_cfg.get("val_fraction", 0.0))
+    split_seed = int(data_cfg.get("split_seed", 123))
+    ds_kwargs = dict(
         perturbation_key=data_cfg.get("perturbation_key", "perturbation"),
         control_label=data_cfg.get("control_label", "control"),
         n_cells_per_pert=int(data_cfg.get("n_cells_per_pert", 100)),
@@ -63,12 +64,17 @@ def main() -> None:
         min_cells=int(data_cfg.get("min_cells", 30)),
         samples_per_epoch=int(data_cfg.get("samples_per_epoch", 1000)),
         seed=seed,
+        val_fraction=val_fraction,
+        split_seed=split_seed,
     )
+    dataset = PerturbationClassificationDataset(adata, mode="train", **ds_kwargs)
     print(
         f"  perturbations ({len(dataset.perturbation_names)}): "
-        f"{dataset.perturbation_names}"
+        f"{len(dataset.perturbation_names)} total"
     )
-    print(f"  NTC cells available: {dataset._ntc_cells.shape[0]}")
+    print(f"  train NTC cells: {dataset._ntc_cells.shape[0]} (full {dataset._ntc_cells_full.shape[0]})")
+    if val_fraction > 0:
+        print(f"  val_fraction={val_fraction}, split_seed={split_seed}")
 
     profiles = dataset.compute_delta_mean_profiles()
     print(f"  profiles shape: {tuple(profiles.shape)}")
