@@ -16,7 +16,7 @@ data:
   n_cells_ntc: 100
   grid_size: 64
   min_cells: 30
-  samples_per_epoch: 1200
+  samples_per_epoch: 200
   val_fraction: 0.20
   split_seed: 123
   singles_only: true
