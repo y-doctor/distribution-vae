@@ -18,7 +18,8 @@ data:
   grid_size: 64
   min_cells: 30
   samples_per_epoch: 100
-  val_fraction: 0.0
+  val_fraction: 0.20       # 20% held-out cells for fair A/B vs MLP baseline
+  split_seed: 123
 
 rl:
   group_size: 50           # full enumeration for 50 classes
@@ -29,7 +30,7 @@ rl:
   grad_clip: 0.5           # tightened from 1.0: original was exploding to >30
 
 training:
-  epochs: 30
+  epochs: 150              # full run; plateau detection is manual via history.json
   batch_size: 4
   seed: 42
 

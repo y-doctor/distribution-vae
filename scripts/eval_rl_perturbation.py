@@ -88,11 +88,12 @@ def plot_training_curves(history_path: Path, out_path: Path, n_perts: int) -> No
 
 
 def compute_predictions(
-    model: PerturbationClassifier,
+    model,
     dataset: PerturbationClassificationDataset,
     R: int = 20,
     n_ensemble: int = 1,
     device: str = "cpu",
+    model_type: str = "token",
 ) -> dict:
     """For each (pert, repeat) sample the model and collect logits + predictions.
 
@@ -100,6 +101,10 @@ def compute_predictions(
         n_ensemble: if > 1, each "trial" averages the model's logits across
             n_ensemble independent 100-cell subsamples before argmax. This
             is the test-time ensembling lever.
+        model_type: "token" for the quantile-grid ``PerturbationClassifier``,
+            "cell" for the per-cell ``PerturbationCellClassifier``. Controls
+            whether each subsample is passed through ``samples_to_quantile_grid``
+            or forwarded as raw cells.
 
     Returns a dict with keys:
       - confusion: (P, P) int64 confusion counts, argmax predictions.
@@ -108,6 +113,7 @@ def compute_predictions(
       - true_p:    (P*R,) int64 true pert index per trial.
       - pred_p:    (P*R,) int64 argmax prediction per trial.
     """
+    assert model_type in ("token", "cell"), model_type
     model.eval()
     P = len(dataset.perturbation_names)
     gene_ids = dataset.vocab.expression_gene_ids.to(device)
@@ -118,7 +124,8 @@ def compute_predictions(
     ntc_cells = dataset._ntc_cells
     n_p = dataset.n_cells_per_pert
     n_n = dataset.n_cells_ntc
-    from dist_vae.data import samples_to_quantile_grid
+    if model_type == "token":
+        from dist_vae.data import samples_to_quantile_grid
 
     all_logits = np.zeros((P * R, P), dtype=np.float32)
     all_true = np.zeros(P * R, dtype=np.int64)
@@ -135,11 +142,16 @@ def compute_predictions(
                     ni = rng.choice(ntc_cells.shape[0], size=min(n_n, ntc_cells.shape[0]), replace=False)
                     p_sub = torch.from_numpy(pert_mat[pi]).float()
                     n_sub = torch.from_numpy(ntc_cells[ni]).float()
-                    p_tok = samples_to_quantile_grid(p_sub.T, dataset.grid_size)
-                    n_tok = samples_to_quantile_grid(n_sub.T, dataset.grid_size)
+                    if model_type == "token":
+                        p_in = samples_to_quantile_grid(p_sub.T, dataset.grid_size)
+                        n_in = samples_to_quantile_grid(n_sub.T, dataset.grid_size)
+                    else:
+                        # Cell model: pass raw (n_cells, G) cells.
+                        p_in = p_sub
+                        n_in = n_sub
                     logits = model(
-                        n_tok.unsqueeze(0).to(device),
-                        p_tok.unsqueeze(0).to(device),
+                        n_in.unsqueeze(0).to(device),
+                        p_in.unsqueeze(0).to(device),
                         gene_ids,
                     ).squeeze(0)
                     ens_logits += logits.cpu().numpy()
@@ -715,6 +727,11 @@ def main() -> None:
         "--mode", type=str, default="val", choices=["train", "val"],
         help="With --val-fraction > 0, which split to eval on.",
     )
+    parser.add_argument(
+        "--model-type", type=str, default="token", choices=["token", "cell"],
+        help="'token' = quantile-grid PerturbationClassifier; "
+             "'cell' = raw-cell PerturbationCellClassifier.",
+    )
     args = parser.parse_args()
 
     _set_style()
@@ -747,24 +764,39 @@ def main() -> None:
     print(f"Loading checkpoint {args.checkpoint} ...")
     ckpt = torch.load(args.checkpoint, weights_only=False, map_location="cpu")
     cfg = ckpt["config"]["model"]
-    model = PerturbationClassifier(
-        n_all_genes=len(dataset.vocab.names),
-        n_perts=P,
-        pert_target_gene_ids=dataset.vocab.pert_target_gene_ids,
-        grid_size=int(cfg.get("grid_size", 64)),
-        d_embed=int(cfg.get("d_embed", 32)),
-        hidden_dim=int(cfg.get("hidden_dim", 128)),
-        d_feat=int(cfg.get("d_feat", 64)),
-        n_attn_layers=int(cfg.get("n_attn_layers", 0)),
-        n_heads=int(cfg.get("n_heads", 4)),
-    )
+    if args.model_type == "token":
+        model = PerturbationClassifier(
+            n_all_genes=len(dataset.vocab.names),
+            n_perts=P,
+            pert_target_gene_ids=dataset.vocab.pert_target_gene_ids,
+            grid_size=int(cfg.get("grid_size", 64)),
+            d_embed=int(cfg.get("d_embed", 32)),
+            hidden_dim=int(cfg.get("hidden_dim", 128)),
+            d_feat=int(cfg.get("d_feat", 64)),
+            n_attn_layers=int(cfg.get("n_attn_layers", 0)),
+            n_heads=int(cfg.get("n_heads", 4)),
+        )
+    else:
+        from dist_vae.rl_cell_model import PerturbationCellClassifier
+        model = PerturbationCellClassifier(
+            n_all_genes=len(dataset.vocab.names),
+            n_perts=P,
+            d=int(cfg.get("d", 64)),
+            n_modules=int(cfg.get("n_modules", 32)),
+            n_cell_layers=int(cfg.get("n_cell_layers", 2)),
+            n_cross_layers=int(cfg.get("n_cross_layers", 2)),
+            n_heads=int(cfg.get("n_heads", 4)),
+            dropout=float(cfg.get("dropout", 0.1)),
+        )
     model.load_state_dict(ckpt["model_state_dict"])
     print(f"  checkpoint from epoch {ckpt['epoch']}, "
           f"train-time mean reward = {ckpt['metrics']['mean_reward']:.4f}")
 
-    print(f"Computing predictions (R={args.n_repeats} trials/pert, n_ensemble={args.n_ensemble}) ...")
+    print(f"Computing predictions (model_type={args.model_type}, "
+          f"R={args.n_repeats} trials/pert, n_ensemble={args.n_ensemble}) ...")
     pred_bundle = compute_predictions(
-        model, dataset, R=args.n_repeats, n_ensemble=args.n_ensemble
+        model, dataset, R=args.n_repeats, n_ensemble=args.n_ensemble,
+        model_type=args.model_type,
     )
     C = pred_bundle["confusion"]
 
