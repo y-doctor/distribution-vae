@@ -587,9 +587,8 @@ def plot_pert_neighborhoods(
             hit_rate = float("nan")
 
         ax.set_title(
-            f"{pert_names[p]}  |  mean r = {per_pert_mean[p]:.2f}  |  "
-            f"P(r≥{tau}) = {hit_rate:.2f}",
-            fontsize=8.5,
+            f"{pert_names[p]}  μr={per_pert_mean[p]:.2f}  P(r≥{tau})={hit_rate:.2f}",
+            fontsize=7.5,
         )
         ax.set_xticks([]); ax.set_yticks([])
         for spine in ax.spines.values():
