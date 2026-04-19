@@ -22,6 +22,50 @@ from torch.utils.data import DataLoader
 from dist_vae.losses import cosine_similarity, pearson_correlation
 
 
+class PlateauDetector:
+    """Rolling-mean plateau detector for early stopping.
+
+    Tracks the best smoothed-reward seen so far. A "plateau" is declared
+    when the smoothed reward fails to improve by at least ``min_delta`` for
+    ``patience`` consecutive epochs. Smoothing is a simple trailing window
+    of the last ``window`` per-epoch rewards.
+
+    Args:
+        window: Rolling-mean window length.
+        patience: Stop after this many epochs without a new best smoothed.
+        min_delta: Minimum improvement over previous best to count.
+    """
+
+    def __init__(self, window: int, patience: int, min_delta: float) -> None:
+        self.window = int(window)
+        self.patience = int(patience)
+        self.min_delta = float(min_delta)
+        self._best_smoothed = -float("inf")
+        self._epochs_since_best = 0
+
+    def update(self, reward_history: list[float]) -> tuple[bool, float]:
+        """Update with full reward history so far.
+
+        Returns ``(should_stop, smoothed)``. ``should_stop`` is False until
+        the detector has seen at least ``window`` epochs and then failed to
+        improve for ``patience`` consecutive epochs.
+        """
+        if len(reward_history) < self.window:
+            return False, float("nan")
+        smoothed = sum(reward_history[-self.window:]) / self.window
+        if smoothed > self._best_smoothed + self.min_delta:
+            self._best_smoothed = smoothed
+            self._epochs_since_best = 0
+        else:
+            self._epochs_since_best += 1
+        should_stop = self._epochs_since_best >= self.patience
+        return should_stop, smoothed
+
+    @property
+    def best_smoothed(self) -> float:
+        return self._best_smoothed
+
+
 def apply_hinge(
     R: torch.Tensor,
     threshold: torch.Tensor | float,
@@ -152,6 +196,13 @@ class GRPOTrainer:
 
         self.batch_size = int(train.get("batch_size", 8))
         self.n_epochs = int(train.get("epochs", 50))
+        # Plateau-based early stopping. Disabled when patience == 0.
+        # Stops if the rolling-mean reward (over `plateau_window` epochs)
+        # hasn't improved by `plateau_min_delta` for `plateau_patience`
+        # consecutive epochs.
+        self.plateau_window = int(train.get("plateau_window", 20))
+        self.plateau_patience = int(train.get("plateau_patience", 0))
+        self.plateau_min_delta = float(train.get("plateau_min_delta", 0.002))
 
         self.loader = DataLoader(
             dataset,
@@ -279,6 +330,15 @@ class GRPOTrainer:
             )
         }
         best_reward = -float("inf")
+        detector = (
+            PlateauDetector(
+                window=self.plateau_window,
+                patience=self.plateau_patience,
+                min_delta=self.plateau_min_delta,
+            )
+            if self.plateau_patience > 0
+            else None
+        )
 
         for epoch in range(1, n_epochs + 1):
             epoch_metrics = self._train_epoch(epoch)
@@ -306,6 +366,18 @@ class GRPOTrainer:
                     },
                     self.ckpt_dir / "best.pt",
                 )
+
+            if detector is not None:
+                should_stop, smoothed = detector.update(history["mean_reward"])
+                if should_stop:
+                    print(
+                        f"[plateau] stopping at ep {epoch}: smoothed reward "
+                        f"{smoothed:.4f} has not improved by "
+                        f"{self.plateau_min_delta} in the last "
+                        f"{self.plateau_patience} epochs "
+                        f"(best smoothed = {detector.best_smoothed:.4f})"
+                    )
+                    break
 
         with open(self.eval_dir / "history.json", "w") as f:
             json.dump(history, f, indent=2)
