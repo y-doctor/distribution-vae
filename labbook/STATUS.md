@@ -1,7 +1,7 @@
 # Project Status
 
-**Last updated**: 2026-04-19 21:42 UTC
-**Updated by**: Session — plateau-stop long training on rescale hinge
+**Last updated**: 2026-04-19 22:26 UTC
+**Updated by**: Session — hinge_multiplier=2.0 A/B broke the P(r≥0.9) ceiling
 
 ## What works
 - `dist_vae/losses.py` — All loss functions + CombinedDistributionLoss (47 tests pass)
@@ -20,7 +20,8 @@
 - **Per-cell set-transformer classifier (rl_cell)** — `dist_vae/rl_cell_model.py`. Raw-cells in, K=16 learned gene modules, 2-layer cell self-attn + 2-layer pert→NTC cross-attn + CLS pool. 150-ep 500g/50p held-out: top-1 0.36, P(r≥0.9) 0.46, top-10 0.78 (ens=10). Trained in ~13 min on CPU. See `eval_results/rl_cell_50p/val_ens10/`.
 - **Reward-landscape intuition viz** — `scripts/viz_reward_landscape.py` plots the sorted Pearson-reward surface per pert with the NTC baseline, showing (a) crowding on strong perts (CEBPA has 10 bio-equiv neighbors above r=0.5), (b) low-support on weak perts (BCL2L11 has 0 above r=0.5), (c) off-diagonal distribution peaks near the mean baseline 0.213 — hinge is milder than expected on singles. `eval_results/reward_landscape/`.
 - **Linear-rescale hinge** — `r_eff = relu((r - θ) / (1 - θ))` above the NTC baseline. New `apply_hinge` helper + `hinge_rescale`/`hinge_multiplier` config flags in `dist_vae/rl_train.py`. 150-ep 2kg/singles A/B vs the binary hinge: held-out top-1 0.075 → 0.091 (ens=1), 0.072 → 0.101 (ens=10), P(r≥0.9) 0.083 → 0.112, MRR 0.161 → 0.180. Ensembling also starts helping (+1pp top-1 from ens=10). `configs/rl_2kg_singles_mlp_pearson_rescale.yaml`, `eval_results/rl_2kg_singles_mlp_pearson_rescale/`.
-- **Plateau-stop long run on rescale hinge** — `PlateauDetector` early-stop class in `dist_vae/rl_train.py` + `configs/rl_2kg_singles_mlp_pearson_rescale_long.yaml`. Ran to ep 405/600 (plateau detected: window=30, patience=50, min_delta=0.002). Train top-1 0.32 → **0.555**, held-out top-1 ens=10 0.101 → **0.111**, top-10 ens=10 0.343 → **0.424**, MRR ens=10 0.190 → **0.216**. P(r≥0.9) plateaued at 0.112 (biology ceiling). Mean reward and P(r≥0.5) dropped ~5pp — entropy collapse to 0.03 traded "broadly right" for "occasionally exact." Longer training = real ranking gains but widening train/held-out gap (5.3× ratio). See entries/2026-04-19_2142_long_training_plateau_results.md.
+- **Plateau-stop long run on rescale hinge** — `PlateauDetector` early-stop class in `dist_vae/rl_train.py` + `configs/rl_2kg_singles_mlp_pearson_rescale_long.yaml`. Ran to ep 405/600 (plateau detected: window=30, patience=50, min_delta=0.002). Train top-1 0.32 → **0.555**, held-out top-1 ens=10 0.101 → **0.111**, top-10 ens=10 0.343 → **0.424**, MRR ens=10 0.190 → **0.216**. Longer training = real ranking gains but widening train/held-out gap (5.0× ratio). See entries/2026-04-19_2142_long_training_plateau_results.md.
+- **hinge_multiplier=2.0 + rescale on 2kg/singles** — plateau-stopped at ep 387. Held-out ens=10: top-1 **0.174** (from 0.111, +57% rel), top-10 **0.531** (from 0.424, +25% rel), MRR **0.293** (from 0.216, +36% rel), **P(r≥0.9) 0.188** (from 0.119, **+58% rel**). Proves the earlier "biology ceiling" at P(r≥0.9)=0.12 was actually a plateau-trap artifact — doubling the hinge destroys the modest-reward local optimum and forces fine discrimination. P(r≥0.5) preserved at 0.526 (broad-class unchanged). No dead-group regression. `configs/rl_2kg_singles_mlp_pearson_rescale_hinge2x.yaml`, `eval_results/rl_2kg_singles_mlp_pearson_rescale_hinge2x/`. See entries/2026-04-19_2226_hinge2x_broke_the_ceiling.md.
 - Package installable via `pip install -e ".[dev]"`
 - All 61 tests pass on CPU
 
@@ -35,14 +36,14 @@
 - Only tested on mini Norman (100 genes, 10 perturbations) — needs full-scale validation
 
 ## What's in progress
-- Reward-function evaluation: rescale hinge + plateau-convergence established. Main bottleneck identified = entropy collapse → deterministic policy → widening train/held-out gap. Next: entropy-floor regularization, then `hinge_multiplier=2.0` A/B.
+- Reward-function tuning: `hinge_multiplier=2.0 + rescale` is now the leading config on 2kg/singles. Next knobs to explore: 3× hinge, entropy floor, combo-data sanity check, rl_cell port.
 
 ## Next priorities
-1. **Entropy-floor regularization** — prevent the policy-entropy → 0 collapse observed in the long run. Options: schedule entropy_coef, KL-to-uniform penalty, clip log-probs. Primary remedy for the 5.3× train/val gap.
-2. A/B: `hinge_multiplier=2.0` + rescale on 2kg/singles — stricter threshold, might help the "close but not quite" predictions that are hurting mean reward at entropy=0.
-3. Port rescale to the rl_cell (set-transformer) path; biology ceiling on P(r≥0.9) suggests architectural change is the highest-leverage move.
-4. Re-run binary-hinge with plateau-stop for a true convergence A/B vs rescale.
-5. Port rescale + combos to full 237-pert data — hinge bites harder there, more to gain.
+1. **Try `hinge_multiplier=3.0`** — is there more above-plateau reward to extract? Higher risk of dead groups on weak perts but worth testing after the 2× surprise.
+2. **Port 2× hinge + rescale to rl_cell (set-transformer) path.** Architecture A/B under the best reward shape found.
+3. **Sanity check on 237-pert combo data.** Combos introduce genuine reward-degenerate pairs; does 2× hinge still help there, or does the biology ceiling become real?
+4. **Entropy-floor regularization.** Entropy collapsed to 0.02 under 2× hinge too — prevent this with KL-to-uniform or scheduled entropy_coef to close the 4.2× train/val gap.
+5. Re-run binary-hinge with plateau-stop for a true convergence A/B vs rescale.
 6. Consider changing `grid_size` default 256 -> 64 in dist_vae/data.py
 7. Add `scripts/encode_as_grid.py` as a VAE-free baseline encoder
 

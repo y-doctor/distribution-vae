@@ -1,8 +1,10 @@
 # Task Board
 
 ## TODO
-- [ ] **Entropy-floor regularization** for the RL policy — stops entropy collapse (observed 1.69 → 0.03 over 405 ep). Options: schedule entropy_coef up over time, KL-to-uniform penalty, log-prob clipping. Primary remedy for the 5.3× train/val gap — M
-- [ ] A/B: `hinge_multiplier=2.0` + rescale on 2kg/singles — test whether stricter threshold helps top-1 without killing weak perts (canaries: BCL2L11, MAP4K3) — S
+- [ ] A/B: `hinge_multiplier=3.0` + rescale on 2kg/singles — after the 2× surprise, see if 3× extracts more above-plateau reward or finally triggers dead groups — S
+- [ ] Port `hinge_multiplier=2.0` + rescale to rl_cell (set-transformer) path — architecture A/B under the best reward shape — S
+- [ ] Sanity check: run 2× hinge on 237-pert combo data. Combos add real reward-degenerate pairs — is the win preserved or does biology ceiling become real? — S
+- [ ] **Entropy-floor regularization** for the RL policy — stops entropy collapse (observed 1.69 → 0.03 on the long 1× run, 0.02 on 2× run). Options: schedule entropy_coef up over time, KL-to-uniform penalty, log-prob clipping. Primary remedy for the ~4× train/val gap — M
 - [ ] Re-run binary-hinge with plateau-stop (convergent A/B vs rescale) — S
 - [ ] Port rescale hinge to the rl_cell set-transformer path (50p A/B) — S
 - [ ] Port rescale + combos to full 237-pert data — M
@@ -30,6 +32,11 @@
 - [ ] Analyze autoresearch results and integrate best findings into main library — M
 
 ## DONE
+- [x] **hinge_multiplier=2.0 + rescale on 2kg/singles** — completed 2026-04-19 22:26
+  - Plateau-stopped at ep 387: train top-1 0.730 (vs 0.555 under 1×), held-out ens=10 top-1 0.174 (vs 0.111, **+57% rel**), top-10 0.531 (vs 0.424, +25%), MRR 0.293 (vs 0.216, +36%), **P(r≥0.9) 0.188 (vs 0.119, +58% rel)**
+  - Broke the three-run "biology ceiling" at P(r≥0.9)=0.12 — was actually a plateau-trap artifact
+  - No dead-group regression; reward/entropy/grad-norm all healthy during training
+  - See entries/2026-04-19_2226_hinge2x_broke_the_ceiling.md
 - [x] **Plateau-stop long training on rescale-hinge config** — completed 2026-04-19 21:42
   - 405-ep run (plateau-stopped from 600 budget) on 2kg/singles: train top-1 0.32 → 0.555, held-out top-1 ens=10 0.101 → 0.111, top-10 ens=10 0.343 → 0.424, MRR ens=10 0.190 → 0.216
   - P(r ≥ 0.9) plateaued at 0.112 — biology ceiling
