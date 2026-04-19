@@ -69,6 +69,9 @@ eval_results/*
 !eval_results/rl_2kg_singles_mlp_pearson_rescale/
 !eval_results/rl_2kg_singles_mlp_pearson_rescale/val_ens1/
 !eval_results/rl_2kg_singles_mlp_pearson_rescale/val_ens10/
+!eval_results/rl_2kg_singles_mlp_pearson_rescale_long/
+!eval_results/rl_2kg_singles_mlp_pearson_rescale_long/val_ens1/
+!eval_results/rl_2kg_singles_mlp_pearson_rescale_long/val_ens10/
 !eval_results/reward_landscape/
 
 # Allow the full training log in rl_cell_50p (overrides *.log rule)
@@ -76,6 +79,7 @@ eval_results/*
 !eval_results/rl_2kg_singles_mlp/full_run.log
 !eval_results/rl_2kg_singles_mlp_pearson/full_run.log
 !eval_results/rl_2kg_singles_mlp_pearson_rescale/full_run.log
+!eval_results/rl_2kg_singles_mlp_pearson_rescale_long/full_run.log
 
 # Download cache artifacts
 https:/
